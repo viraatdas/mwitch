@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mwitch</title>
+<meta name="description" content="A fast, native macOS window switcher. Cmd+Tab through every window across every app. Apple Silicon. Open source.">
+
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mwitch.viraat.dev/">
+<meta property="og:title" content="mwitch — Cmd+Tab, for every window">
+<meta property="og:description" content="A fast, native macOS window switcher. One row per window across every app. Apple Silicon. Open source.">
+<meta property="og:image" content="https://mwitch.viraat.dev/icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="mwitch">
+<meta name="twitter:description" content="A fast, native macOS window switcher.">
+<meta name="twitter:image" content="https://mwitch.viraat.dev/icon-512.png">
+
+<style>
+  :root {
+    --fg: #0a0a0a;
+    --fg-soft: rgba(10, 10, 10, 0.62);
+    --fg-dim: rgba(10, 10, 10, 0.40);
+    --fg-faint: rgba(10, 10, 10, 0.10);
+    --bg: #fdfdfd;
+    --accent: #1b7cff;
+    --kbd-bg: rgba(0, 0, 0, 0.04);
+    --kbd-bd: rgba(0, 0, 0, 0.10);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", system-ui, sans-serif;
+    font-weight: 300;
+    font-feature-settings: "ss01", "ss02", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.55;
+  }
+
+  ::selection { background: var(--accent); color: #fff; }
+
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 5rem) clamp(1.5rem, 5vw, 2.5rem) clamp(3rem, 8vw, 5rem);
+  }
+
+  nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: clamp(4.5rem, 12vw, 7rem);
+    font-size: 13px;
+    font-weight: 400;
+  }
+  nav .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--fg);
+    text-decoration: none;
+    letter-spacing: -0.005em;
+  }
+  nav .brand img {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+  }
+  nav a.link {
+    color: var(--fg-soft);
+    text-decoration: none;
+    margin-left: 1.5rem;
+    transition: color 0.15s ease;
+  }
+  nav a.link:hover { color: var(--fg); }
+
+  .hero img.logo {
+    width: clamp(72px, 12vw, 96px);
+    height: clamp(72px, 12vw, 96px);
+    border-radius: clamp(16px, 2.5vw, 22px);
+    margin-bottom: 2.25rem;
+    display: block;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 6.5vw, 4.2rem);
+    font-weight: 200;
+    letter-spacing: -0.04em;
+    line-height: 1.02;
+    margin-bottom: 1.25rem;
+    color: var(--fg);
+  }
+
+  .tagline {
+    font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+    font-weight: 300;
+    color: var(--fg-soft);
+    max-width: 540px;
+    margin-bottom: 2.5rem;
+    letter-spacing: -0.01em;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.75rem 1.15rem;
+    border-radius: 10px;
+    background: var(--fg);
+    color: var(--bg);
+    font-weight: 400;
+    font-size: 14px;
+    text-decoration: none;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+  }
+  .cta:hover { transform: translateY(-1px); opacity: 0.92; }
+  .cta .arrow { display: inline-block; transition: transform 0.2s ease; }
+  .cta:hover .arrow { transform: translateX(2px); }
+
+  .cta-meta {
+    font-size: 12.5px;
+    color: var(--fg-dim);
+    font-weight: 300;
+  }
+
+  .shortcut {
+    margin-top: 1.5rem;
+    color: var(--fg-soft);
+    font-size: 13px;
+    font-weight: 300;
+  }
+  .kbd {
+    font: 400 11.5px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: var(--kbd-bg);
+    border: 1px solid var(--kbd-bd);
+    color: var(--fg);
+    margin: 0 2px;
+  }
+
+  /* Demo panel — mimics the actual mwitch UI on a soft platform-y backdrop */
+  .demo-frame {
+    margin: clamp(3.5rem, 8vw, 5rem) 0 0;
+    padding: clamp(1.5rem, 4vw, 2.5rem);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #f7f7f9 0%, #ececf0 100%);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+  }
+  .demo {
+    max-width: 560px;
+    margin: 0 auto;
+    background: #fafafa;
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow:
+      0 22px 48px -18px rgba(0, 0, 0, 0.16),
+      0 0 0 1px rgba(0, 0, 0, 0.04);
+  }
+  .demo .row {
+    display: grid;
+    grid-template-columns: 1fr 26px 1.4fr;
+    align-items: center;
+    column-gap: 14px;
+    padding: 8px 14px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--fg);
+  }
+  .demo .row .app {
+    text-align: right;
+    color: rgba(0, 0, 0, 0.50);
+    font-weight: 400;
+  }
+  .demo .row .icon {
+    width: 22px; height: 22px; border-radius: 5px;
+    background: linear-gradient(135deg, #c4c8ff, #8fb6ff);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  }
+  .demo .row .icon.b { background: linear-gradient(135deg, #ffbcb6, #ff7e8a); }
+  .demo .row .icon.c { background: linear-gradient(135deg, #b6e0ff, #6cb4ff); }
+  .demo .row .icon.d { background: linear-gradient(135deg, #b6f0c2, #4ed380); }
+  .demo .row .icon.e { background: linear-gradient(135deg, #ffe8a8, #ffb346); }
+  .demo .row .icon.f { background: linear-gradient(135deg, #d8c6ff, #a085ff); }
+  .demo .row .title { font-weight: 400; }
+  .demo .row.selected {
+    background: var(--accent);
+    color: #fff;
+  }
+  .demo .row.selected .app { color: rgba(255, 255, 255, 0.85); }
+  .demo .row.selected .title { color: #fff; }
+
+  /* Sections */
+  section { margin-top: clamp(4rem, 9vw, 6rem); }
+  section h2 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin-bottom: 1.5rem;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 2rem 2.5rem;
+  }
+  .feature h3 {
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.35rem;
+  }
+  .feature p {
+    color: var(--fg-soft);
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.55;
+  }
+
+  .steps {
+    list-style: none;
+    counter-reset: step;
+  }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 1.15rem 0 1.15rem 2.5rem;
+    border-bottom: 1px solid var(--fg-faint);
+    font-size: 14.5px;
+    font-weight: 300;
+    color: var(--fg-soft);
+    line-height: 1.55;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: "0" counter(step);
+    position: absolute;
+    left: 0;
+    top: 1.2rem;
+    font: 500 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--fg-dim);
+    letter-spacing: 0.06em;
+  }
+  .steps li strong {
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .steps li code {
+    font: 400 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 6px;
+    background: var(--kbd-bg);
+    border: 1px solid var(--kbd-bd);
+    border-radius: 4px;
+    color: var(--fg);
+  }
+  .steps + p.note {
+    margin-top: 1.25rem;
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 300;
+  }
+  .steps + p.note code {
+    font: 400 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 6px;
+    background: var(--kbd-bg);
+    border: 1px solid var(--kbd-bd);
+    border-radius: 4px;
+    color: var(--fg);
+  }
+
+  footer {
+    margin-top: clamp(5rem, 12vw, 7rem);
+    padding-top: 2rem;
+    border-top: 1px solid var(--fg-faint);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 300;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  footer a {
+    color: var(--fg-soft);
+    text-decoration: none;
+    margin-left: 1.25rem;
+    transition: color 0.15s ease;
+  }
+  footer a:hover { color: var(--fg); }
+  footer .left a { margin-left: 0; text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (max-width: 540px) {
+    .features { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="/" class="brand">
+      <img src="/logo.png" alt="">
+      mwitch
+    </a>
+    <div>
+      <a class="link" href="#install">Install</a>
+      <a class="link" href="https://viraat.dev" target="_blank" rel="noopener">viraat.dev</a>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <img class="logo" src="/logo.png" alt="mwitch app icon">
+    <h1>Cmd+Tab, for every&nbsp;window.</h1>
+    <p class="tagline">
+      A fast, native macOS window switcher. One row per window across every app — not one icon per app. Apple Silicon. Open source.
+    </p>
+    <div class="actions">
+      <a class="cta" href="/mwitch.zip" download>
+        Download for macOS <span class="arrow">→</span>
+      </a>
+      <span class="cta-meta">Apple Silicon · macOS 13+ · ~1 MB</span>
+    </div>
+    <div class="shortcut">
+      Press <span class="kbd">Cmd</span> + <span class="kbd">Tab</span> after launch.
+    </div>
+
+    <div class="demo-frame">
+      <div class="demo" aria-hidden="true">
+        <div class="row"><span class="app">Ghostty</span><span class="icon"></span><span class="title">~ — zsh</span></div>
+        <div class="row selected"><span class="app">Arc</span><span class="icon c"></span><span class="title">mwitch.viraat.dev</span></div>
+        <div class="row"><span class="app">Code</span><span class="icon f"></span><span class="title">SwitcherPanel.swift</span></div>
+        <div class="row"><span class="app">Messages</span><span class="icon d"></span><span class="title">David</span></div>
+        <div class="row"><span class="app">Spotify</span><span class="icon d"></span><span class="title">Liked Songs</span></div>
+        <div class="row"><span class="app">Finder</span><span class="icon c"></span><span class="title">Downloads</span></div>
+        <div class="row"><span class="app">Notion</span><span class="icon"></span><span class="title">May 2026 · Notion Calendar</span></div>
+        <div class="row"><span class="app">Discord</span><span class="icon b"></span><span class="title">#general</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why</h2>
+    <div class="features">
+      <div class="feature">
+        <h3>One row per window</h3>
+        <p>Five Arc windows? Five rows. Jump to the right one in a keystroke.</p>
+      </div>
+      <div class="feature">
+        <h3>Type to filter</h3>
+        <p>Fuzzy match across app names and window titles.</p>
+      </div>
+      <div class="feature">
+        <h3>Native &amp; tiny</h3>
+        <p>Swift, ~200 KB binary, arm64. Zero overhead when idle.</p>
+      </div>
+      <div class="feature">
+        <h3>Open source</h3>
+        <p>MIT. No telemetry, no accounts.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <ol class="steps">
+      <li>Download the zip, unzip, and drag <strong>mwitch.app</strong> into <code>/Applications</code>.</li>
+      <li>First launch will show "<strong>unidentified developer</strong>" — that's expected for un-notarized apps. <strong>Right-click → Open → Open</strong>. One time only.</li>
+      <li>Grant <strong>Accessibility</strong> when prompted (<em>System Settings → Privacy &amp; Security → Accessibility</em>). mwitch needs it to read window titles and raise windows.</li>
+      <li>Quit from the menu bar, relaunch, press <span class="kbd">Cmd</span> + <span class="kbd">Tab</span>.</li>
+    </ol>
+    <p class="note">
+      Terminal alternative for the Gatekeeper step:
+      <code>xattr -dr com.apple.quarantine /Applications/mwitch.app</code>
+    </p>
+  </section>
+
+  <footer>
+    <div class="left">built by <a href="https://viraat.dev" target="_blank" rel="noopener">viraat</a></div>
+    <div>
+      <a href="/mwitch.zip" download>download</a>
+      <a href="https://viraat.dev" target="_blank" rel="noopener">viraat.dev</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
