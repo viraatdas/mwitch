@@ -11,6 +11,10 @@ let package = Package(
             swiftSettings: [
                 .unsafeFlags(["-O", "-whole-module-optimization"], .when(configuration: .release))
             ]
+        ),
+        .testTarget(
+            name: "mwitchTests",
+            dependencies: ["mwitch"]
         )
     ]
 )

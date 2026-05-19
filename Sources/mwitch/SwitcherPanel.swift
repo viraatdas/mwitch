@@ -11,9 +11,7 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
     private let visualEffect = NSVisualEffectView()
     private let searchLabel = NSTextField(labelWithString: "")
 
-    private var entries: [WindowEntry] = []
-    private var filtered: [WindowEntry] = []
-    private var searchBuffer: String = ""
+    private var listState = SwitcherListState()
     private var keyMonitor: Any?
 
     private let rowHeight: CGFloat = 38
@@ -105,20 +103,32 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
     // MARK: - Lifecycle
 
     func update(entries: [WindowEntry], selection: Int) {
-        self.entries = entries
-        self.filtered = entries
-        searchBuffer = ""
+        let selectedRow = listState.update(entries: entries, selection: selection)
         updateSearchLabel()
         sizeToContents()
         tableView.reloadData()
-        setSelection(selection)
+        selectTableRow(selectedRow)
     }
 
     func setSelection(_ index: Int) {
-        guard !filtered.isEmpty else { return }
-        let clamped = max(0, min(filtered.count - 1, index))
-        tableView.selectRowIndexes(IndexSet(integer: clamped), byExtendingSelection: false)
-        tableView.scrollRowToVisible(clamped)
+        selectTableRow(listState.setSelection(absoluteIndex: index))
+    }
+
+    func clearSelection() {
+        listState.clearSelection()
+        tableView.selectRowIndexes(IndexSet(), byExtendingSelection: false)
+    }
+
+    /// Advances through the rows that are currently visible in the panel and
+    /// returns the corresponding absolute entry index for the controller.
+    func advanceVisibleSelection(reverse: Bool = false) -> Int? {
+        let selectedAbsoluteIndex = listState.moveSelection(by: reverse ? -1 : 1)
+        guard let selectedAbsoluteIndex, let selectedRow = listState.selectedRow else {
+            clearSelection()
+            return nil
+        }
+        selectTableRow(selectedRow)
+        return selectedAbsoluteIndex
     }
 
     /// Call once after init to pre-warm the WindowServer connection. Subsequent
@@ -147,8 +157,8 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
     private func sizeToContents() {
         guard let screen = activeScreen() else { return }
         let usable = screen.visibleFrame.height - 120
-        let rowsHeight = CGFloat(max(1, filtered.count)) * rowHeight
-        let chrome: CGFloat = 12 + (searchBuffer.isEmpty ? 0 : 26)
+        let rowsHeight = CGFloat(max(1, listState.filtered.count)) * rowHeight
+        let chrome: CGFloat = 12 + (listState.searchBuffer.isEmpty ? 0 : 26)
         let desired = rowsHeight + chrome
         let height = min(usable, max(rowHeight + chrome, desired))
         var f = frame
@@ -156,7 +166,7 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
         setFrame(f, display: false)
 
         // Re-lay out the scroll area depending on whether search label is visible.
-        if searchBuffer.isEmpty {
+        if listState.searchBuffer.isEmpty {
             scrollView.frame = visualEffect.bounds.insetBy(dx: 6, dy: 6)
         } else {
             scrollView.frame = NSRect(x: 6, y: 6,
@@ -207,17 +217,13 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
             moveSelection(by: event.modifierFlags.contains(.shift) ? -1 : 1)
             return true
         case 51: // Delete
-            if !searchBuffer.isEmpty {
-                searchBuffer.removeLast()
-                applyFilter()
-            }
+            applyFilter(selectedAbsoluteIndex: listState.deleteLastSearchCharacter())
             return true
         default:
             if let chars = event.charactersIgnoringModifiers,
                let scalar = chars.unicodeScalars.first,
                scalar.value >= 0x20, scalar.value < 0x7F {
-                searchBuffer.append(Character(scalar))
-                applyFilter()
+                applyFilter(selectedAbsoluteIndex: listState.appendSearchCharacter(Character(scalar)))
                 return true
             }
             return false
@@ -225,63 +231,56 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
     }
 
     private func moveSelection(by delta: Int) {
-        guard !filtered.isEmpty else { return }
-        let current = max(0, tableView.selectedRow)
-        let next = (current + delta + filtered.count) % filtered.count
-        setSelection(next)
-        if let abs = entries.firstIndex(of: filtered[next]) {
-            controller?.setSelection(abs)
+        guard let selectedAbsoluteIndex = advanceVisibleSelection(reverse: delta < 0) else {
+            controller?.clearSelection(updatePanel: false)
+            return
         }
+        controller?.setSelection(selectedAbsoluteIndex, updatePanel: false)
     }
 
-    private func applyFilter() {
-        let needle = searchBuffer.lowercased()
-        if needle.isEmpty {
-            filtered = entries
-        } else {
-            filtered = entries.filter { entry in
-                Self.fuzzyMatch(needle: needle, haystack: "\(entry.appName) \(entry.title)".lowercased())
-            }
-        }
+    private func applyFilter(selectedAbsoluteIndex: Int?) {
         updateSearchLabel()
+        tableView.reloadData()
         sizeToContents()
         positionOnActiveScreen()
-        tableView.reloadData()
-        if let first = filtered.first, let abs = entries.firstIndex(of: first) {
-            setSelection(0)
-            controller?.setSelection(abs)
+        if let selectedAbsoluteIndex, let selectedRow = listState.selectedRow {
+            selectTableRow(selectedRow)
+            controller?.setSelection(selectedAbsoluteIndex, updatePanel: false)
+        } else {
+            clearSelection()
+            controller?.clearSelection(updatePanel: false)
         }
     }
 
     private func updateSearchLabel() {
-        if searchBuffer.isEmpty {
+        if listState.searchBuffer.isEmpty {
             searchLabel.isHidden = true
         } else {
             searchLabel.isHidden = false
-            searchLabel.stringValue = "Search: \(searchBuffer)"
+            searchLabel.stringValue = "Search: \(listState.searchBuffer)"
         }
     }
 
-    private static func fuzzyMatch(needle: String, haystack: String) -> Bool {
-        if haystack.contains(needle) { return true }
-        var idx = haystack.startIndex
-        for ch in needle {
-            guard let found = haystack[idx...].firstIndex(of: ch) else { return false }
-            idx = haystack.index(after: found)
+    private func selectTableRow(_ row: Int?) {
+        guard let row, listState.filtered.indices.contains(row) else {
+            tableView.selectRowIndexes(IndexSet(), byExtendingSelection: false)
+            return
         }
-        return true
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        tableView.scrollRowToVisible(row)
     }
 
     // MARK: - NSTableView
 
-    func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { listState.filtered.count }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         SidebarRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let entry = filtered[row]
+        guard listState.filtered.indices.contains(row) else { return nil }
+        let entry = listState.filtered[row]
         let identifier = NSUserInterfaceItemIdentifier("row")
         let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? RowCellView) ?? {
             let c = RowCellView()
@@ -294,10 +293,8 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
 
     @objc private func rowClicked(_ sender: Any?) {
         let row = tableView.clickedRow
-        guard row >= 0, row < filtered.count else { return }
-        if let abs = entries.firstIndex(of: filtered[row]) {
-            controller?.setSelection(abs)
-        }
+        guard let abs = listState.absoluteIndex(forFilteredRow: row) else { return }
+        controller?.setSelection(abs, updatePanel: false)
         controller?.commitIfVisible()
     }
 
