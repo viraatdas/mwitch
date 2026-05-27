@@ -33,12 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                          updaterDelegate: nil,
                                                          userDriverDelegate: nil)
         setupStatusItem()
-        // Show the in-app onboarding window when either permission is missing.
-        // Auto-dismissable once both are granted — won't pop up on subsequent
-        // launches if everything's fine.
-        DispatchQueue.main.async {
-            OnboardingWindow.shared.presentIfNeeded()
-        }
 
         switcher = SwitcherController()
         switcher.preWarm()
@@ -79,9 +73,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     keyEquivalent: "")
         updateItem.target = updaterController
         menu.addItem(updateItem)
-        let setupItem = NSMenuItem(title: "Setup & Permissions…", action: #selector(showOnboarding), keyEquivalent: "")
-        setupItem.target = self
-        menu.addItem(setupItem)
         menu.addItem(NSMenuItem.separator())
         let accItem = NSMenuItem(title: "Open Accessibility Settings…", action: #selector(openAccessibility), keyEquivalent: "")
         accItem.target = self
@@ -103,10 +94,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showSwitcher() {
         switcher.advance()
         switcher.commitIfVisible()
-    }
-
-    @objc private func showOnboarding() {
-        OnboardingWindow.shared.present()
     }
 
     @objc private func openAccessibility() {

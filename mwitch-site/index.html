@@ -15,7 +15,7 @@
 
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://mwitch.viraat.dev/">
-<meta property="og:title" content="mwitch — Cmd+Tab, for every window">
+<meta property="og:title" content="mwitch: Cmd+Tab, for every window">
 <meta property="og:description" content="A fast, native macOS window switcher. One row per window across every app. Apple Silicon. Open source.">
 <meta property="og:image" content="https://mwitch.viraat.dev/icon-512.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -157,7 +157,7 @@
     margin: 0 2px;
   }
 
-  /* Demo panel — mimics the actual mwitch UI on a soft platform-y backdrop */
+  /* Demo panel: mimics the actual mwitch UI on a soft platform-y backdrop */
   .demo-frame {
     margin: clamp(3.5rem, 8vw, 5rem) 0 0;
     padding: clamp(1.5rem, 4vw, 2.5rem);
@@ -267,6 +267,12 @@
     font-weight: 500;
     color: var(--fg);
   }
+  .steps li .why {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 13px;
+    color: var(--fg-dim);
+  }
   .steps li code {
     font: 400 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
     padding: 1px 6px;
@@ -334,7 +340,7 @@
     <img class="logo" src="/logo.png" alt="mwitch app icon">
     <h1>Cmd+Tab, for every&nbsp;window.</h1>
     <p class="tagline">
-      A fast, native macOS window switcher. One row per window across every app — not one icon per app. Apple Silicon. Open source.
+      A fast, native macOS window switcher. One row per window across every app, not one icon per app. Apple Silicon. Open source.
     </p>
     <div class="actions">
       <a class="cta" href="/mwitch.zip" download>
@@ -348,7 +354,7 @@
 
     <div class="demo-frame">
       <div class="demo" aria-hidden="true">
-        <div class="row"><span class="app">Ghostty</span><span class="icon"></span><span class="title">~ — zsh</span></div>
+        <div class="row"><span class="app">Ghostty</span><span class="icon"></span><span class="title">~ · zsh</span></div>
         <div class="row selected"><span class="app">Arc</span><span class="icon c"></span><span class="title">mwitch.viraat.dev</span></div>
         <div class="row"><span class="app">Code</span><span class="icon f"></span><span class="title">SwitcherPanel.swift</span></div>
         <div class="row"><span class="app">Messages</span><span class="icon d"></span><span class="title">David</span></div>
@@ -386,13 +392,24 @@
     <h2>Install</h2>
     <ol class="steps">
       <li>Download the zip, unzip, and drag <strong>mwitch.app</strong> into <code>/Applications</code>.</li>
-      <li>First launch will show "<strong>unidentified developer</strong>" — that's expected for un-notarized apps. <strong>Right-click → Open → Open</strong>. One time only.</li>
-      <li>Grant <strong>Accessibility</strong> when prompted (<em>System Settings → Privacy &amp; Security → Accessibility</em>). mwitch needs it to read window titles and raise windows.</li>
-      <li>Quit from the menu bar, relaunch, press <span class="kbd">Cmd</span> + <span class="kbd">Tab</span>.</li>
+      <li>Double-click <strong>mwitch.app</strong> to launch. Signed and notarized by Apple, so no Gatekeeper warnings.</li>
+      <li>
+        Grant <strong>Accessibility</strong> permission. A macOS dialog will pop up. Click <strong>Open System Settings</strong>, then toggle <strong>mwitch</strong> on in the list.
+        <span class="why">Lets mwitch intercept <span class="kbd">Cmd</span> + <span class="kbd">Tab</span> and raise the window you pick.</span>
+      </li>
+      <li>
+        Grant <strong>Screen Recording</strong> permission. A second dialog will pop up with the same flow: <strong>Open System Settings</strong>, toggle <strong>mwitch</strong> on.
+        <span class="why">Required by macOS for any app that reads window titles. mwitch never records your screen.</span>
+      </li>
+      <li>
+        When macOS asks to <strong>Quit &amp; Reopen</strong> mwitch, click that. Permissions only activate after a relaunch.
+      </li>
+      <li>
+        Press <span class="kbd">Cmd</span> + <span class="kbd">Tab</span>. The switcher should pop up. Hold <span class="kbd">Cmd</span>, tap <span class="kbd">Tab</span> to advance, release to switch. mwitch starts automatically at login from now on.
+      </li>
     </ol>
     <p class="note">
-      Terminal alternative for the Gatekeeper step:
-      <code>xattr -dr com.apple.quarantine /Applications/mwitch.app</code>
+      <strong>Stuck?</strong> If a permission dialog disappeared before you could click it, open the panes manually from the mwitch menu bar icon → <em>Open Accessibility Settings…</em> and <em>Open Screen Recording Settings…</em>. If <strong>mwitch</strong> already appears in either list with the toggle on but Cmd+Tab still doesn't work, remove it with the <code>–</code> button, then click <code>+</code> and re-add <code>/Applications/mwitch.app</code>.
     </p>
   </section>
 

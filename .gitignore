@@ -6,3 +6,7 @@ build/
 Package.resolved
 DerivedData/
 .DS_Store
+.venv*/
+__pycache__/
+*.pyc
+RUDDER.md
