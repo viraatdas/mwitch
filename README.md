@@ -31,7 +31,7 @@ Each row shows the app's icon, the window title, and the app name underneath. Wi
 open build/mwitch.app
 ```
 
-The script does a release build for `arm64` only, assembles `build/mwitch.app`, and ad-hoc signs it. Resulting binary is ~180 KB.
+The script does a release build for `arm64` only, assembles `build/mwitch.app`, embeds + re-signs `Sparkle.framework` (for auto-update), stamps the version, and signs the bundle (Developer ID if available, else ad-hoc). The mwitch binary itself is ~180 KB; the embedded Sparkle framework brings the bundle to ~2 MB.
 
 For iteration:
 
@@ -52,12 +52,26 @@ Then quit and relaunch the app. (The status-bar menu has an "Open Accessibility 
 
 Registering Cmd+Tab as a global hotkey relies on the Carbon `RegisterEventHotKey` API. While mwitch is running and has Accessibility access, its handler runs instead of the system app-switcher. Quitting mwitch returns Cmd+Tab to its default behavior. There is no system-level "disable Apple's app switcher" toggle — this is how every replacement on macOS works.
 
+## Auto-update
+
+mwitch ships with [Sparkle](https://sparkle-project.org). Installed copies silently check `https://mwitch.viraat.dev/appcast.xml` once a day, then download and install new versions in place — no manual re-download. Each release is signed with an EdDSA key, and the public half is pinned in the app's `Info.plist` (`SUPublicEDKey`). There's also a "Check for Updates…" item in the menu-bar menu.
+
+## Releasing
+
+1. Bump the marketing version in the top-level `VERSION` file (e.g. `0.2.0` → `0.2.1`).
+2. **Commit the bump.** The build number (`CFBundleVersion`) is the git commit count, so the commit is what advances it — and Sparkle uses `CFBundleVersion` to decide an update is newer. Building on a dirty/uncommitted tree reuses the current count and Sparkle won't offer the update.
+3. `./build.sh` — builds, embeds + signs Sparkle, stamps the version, signs with Developer ID.
+4. `./notarize.sh` — notarizes + staples, regenerates `appcast.xml` (EdDSA-signed with the key in your keychain), and stages `appcast.xml` + `mwitch.zip` into `mwitch-site/`.
+5. `cd mwitch-site && vercel deploy --prod --yes` — publishes. Every installed copy upgrades itself within a day.
+
+**One-time setup:** the EdDSA signing key is created once with Sparkle's `generate_keys` tool and stored in your login keychain. **Back it up** (export from Keychain Access, item “Private key for signing Sparkle updates”). If you lose it you can never sign an update the installed base will accept, and auto-update breaks permanently for existing users.
+
 ## Architecture
 
 ```
 Sources/mwitch/
   main.swift             entry point — NSApplication.accessory mode
-  AppDelegate.swift      menu-bar item, accessibility prompt, hotkey wiring
+  AppDelegate.swift      menu-bar item, accessibility prompt, hotkey wiring, Sparkle updater
   HotkeyManager.swift    Carbon hotkey + NSEvent flagsChanged for Cmd-release
   WindowEnumerator.swift CGWindowList → [WindowEntry], dedup + filtering
   WindowActivator.swift  AXUIElement raise + un-minimize + setMain
@@ -76,6 +90,7 @@ Sources/mwitch/
 | Activate the owning app | `NSRunningApplication.activate` |
 | App icons / names | `NSRunningApplication.icon / localizedName` |
 | Floating UI that doesn't steal focus | `NSPanel` with `.nonactivatingPanel`, `level = .floating` |
+| Silent auto-update | Sparkle `SPUStandardUpdaterController` + hosted EdDSA-signed appcast |
 
 ## Known limitations
 

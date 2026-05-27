@@ -32,5 +32,15 @@
     <true/>
     <key>NSAccessibilityUsageDescription</key>
     <string>mwitch needs Accessibility access to list and switch between windows of other applications.</string>
+    <key>SUFeedURL</key>
+    <string>https://mwitch.viraat.dev/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>P5QH0XAKouuSIU8RJtzTTH/6dfUDP/BBc3OtoKP8Yfg=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>
