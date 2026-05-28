@@ -40,10 +40,11 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 chmod +x "$APP/Contents/MacOS/mwitch"
 
-# Stamp the version. Marketing version comes from the VERSION file; the build
-# number is the git commit count so it increases monotonically — Sparkle uses
-# CFBundleVersion to decide whether an appcast item is newer than what's installed.
-MARKETING_VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION" 2>/dev/null || echo 0.0.0)"
+# Stamp the version. Marketing version comes from MWITCH_VERSION (set from the
+# git tag in CI) or the VERSION file locally; the build number is the git commit
+# count so it increases monotonically — Sparkle uses CFBundleVersion to decide
+# whether an appcast item is newer than what's installed.
+MARKETING_VERSION="${MWITCH_VERSION:-$(tr -d '[:space:]' < "$ROOT/VERSION" 2>/dev/null || echo 0.0.0)}"
 BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
 echo "==> Version $MARKETING_VERSION (build $BUILD_NUMBER)"
 plutil -replace CFBundleShortVersionString -string "$MARKETING_VERSION" "$APP/Contents/Info.plist"

@@ -5,17 +5,20 @@ set -euo pipefail
 # and staples the notarization ticket so the app launches on any Mac without
 # the "unidentified developer" Gatekeeper warning.
 #
-# Prerequisite: a "Developer ID Application" certificate in the keychain
-# (build.sh already auto-detects + signs with it). Plus a one-time creds
-# profile stored under the keychain name "mwitch-notary":
+# Auth (two modes):
+#   • Local: a one-time keychain creds profile "mwitch-notary":
+#       xcrun notarytool store-credentials mwitch-notary \
+#           --apple-id "you@example.com" --team-id "TEAMID" \
+#           --password "app-specific-password"
+#   • CI: set AC_API_KEY_PATH (path to App Store Connect .p8), AC_API_KEY_ID,
+#     and AC_API_ISSUER_ID — used instead of the keychain profile.
 #
-#   xcrun notarytool store-credentials mwitch-notary \
-#       --apple-id "you@example.com" \
-#       --team-id  "YOURTEAMID" \
-#       --password "app-specific-password"     # from appleid.apple.com
+# Sparkle appcast signing reads the EdDSA private key from the keychain by
+# default; in CI set SPARKLE_ED_PRIVATE_KEY (the exported key string) and it's
+# fed to generate_appcast via stdin instead.
 #
-# After this script finishes successfully, redeploy mwitch.zip with
-#   cd mwitch-site && cp ../build/mwitch.zip . && vercel deploy --prod --yes
+# After this finishes, deploy with:
+#   cd mwitch-site && vercel deploy --prod --yes
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/build/mwitch.app"
@@ -40,9 +43,17 @@ rm -f "$ZIP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 
 echo "==> Submitting to Apple notary (this takes 1–10 min)"
-xcrun notarytool submit "$ZIP" \
-    --keychain-profile "$PROFILE" \
-    --wait
+if [[ -n "${AC_API_KEY_PATH:-}" ]]; then
+    xcrun notarytool submit "$ZIP" \
+        --key "$AC_API_KEY_PATH" \
+        --key-id "$AC_API_KEY_ID" \
+        --issuer "$AC_API_ISSUER_ID" \
+        --wait
+else
+    xcrun notarytool submit "$ZIP" \
+        --keychain-profile "$PROFILE" \
+        --wait
+fi
 
 echo "==> Stapling ticket to $APP"
 xcrun stapler staple "$APP"
@@ -54,9 +65,9 @@ ditto -c -k --sequesterRsrc --keepParent "$APP" "$ROOT/build/mwitch.zip"
 
 # Build the Sparkle appcast from the notarized+stapled zip. generate_appcast
 # reads the version from the app's Info.plist and signs the enclosure with the
-# EdDSA private key in the keychain (created once via `generate_keys`). The
-# archive is named mwitch.zip so the appcast enclosure points at the same
-# /mwitch.zip the website download button serves.
+# EdDSA private key (keychain locally, or SPARKLE_ED_PRIVATE_KEY via stdin in
+# CI). The archive is named mwitch.zip so the appcast enclosure points at the
+# same /mwitch.zip the website download button serves.
 echo "==> Generating Sparkle appcast"
 GEN="$(find "$ROOT/.build/artifacts" -path "*/bin/generate_appcast" -type f | head -1)"
 if [[ -z "$GEN" ]]; then
@@ -67,7 +78,12 @@ ACDIR="$ROOT/build/appcast"
 rm -rf "$ACDIR"
 mkdir -p "$ACDIR"
 cp "$ROOT/build/mwitch.zip" "$ACDIR/mwitch.zip"
-"$GEN" --download-url-prefix "https://mwitch.viraat.dev/" "$ACDIR"
+if [[ -n "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+    printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$GEN" --ed-key-file - \
+        --download-url-prefix "https://mwitch.viraat.dev/" "$ACDIR"
+else
+    "$GEN" --download-url-prefix "https://mwitch.viraat.dev/" "$ACDIR"
+fi
 
 echo "==> Staging appcast.xml + mwitch.zip into mwitch-site/"
 cp "$ACDIR/appcast.xml" "$ROOT/mwitch-site/appcast.xml"

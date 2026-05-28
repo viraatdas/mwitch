@@ -1,0 +1,103 @@
+name: Release
+
+# Tag a release and it ships itself:
+#   git tag v0.2.1 && git push origin v0.2.1
+# Builds + signs the arm64 .app, notarizes + staples it, regenerates the
+# EdDSA-signed Sparkle appcast, and deploys mwitch-site to Vercel production.
+# Every installed copy (0.2.0+) then auto-updates within a day.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   DEVELOPER_ID_CERT_P12        base64 of your "Developer ID Application" .p12
+#   DEVELOPER_ID_CERT_PASSWORD   password for that .p12
+#   SPARKLE_PRIVATE_KEY          EdDSA key exported via `generate_keys -x` (file contents)
+#   AC_API_KEY_P8                base64 of the App Store Connect API key .p8
+#   AC_API_KEY_ID                the key's Key ID
+#   AC_API_ISSUER_ID             the App Store Connect issuer ID
+#   VERCEL_TOKEN                 a Vercel access token
+# See README "Automated releases" for how to produce each one.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Marketing version to ship (e.g. 0.2.1)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      # Vercel project identifiers (not secret) so the CLI deploys without `vercel link`.
+      VERCEL_ORG_ID: team_y9dMPrICmkJdaXHkkuG0gMeX
+      VERCEL_PROJECT_ID: prj_AdYd3i4SMCA4OAwEtOwvkMkh8oHf
+    steps:
+      - name: Checkout (full history — build number is the commit count)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive marketing version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Shipping version $V"
+
+      - name: Import Developer ID signing certificate
+        env:
+          CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KC_PW="$(openssl rand -base64 24)"
+          security create-keychain -p "$KC_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN" >/dev/null
+          # Put our keychain at the front of the search list so build.sh's
+          # `security find-identity` picks up the Developer ID identity.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Build + sign (embeds + re-signs Sparkle)
+        env:
+          MWITCH_VERSION: ${{ steps.ver.outputs.version }}
+        run: ./build.sh release
+
+      - name: Write App Store Connect API key
+        env:
+          AC_API_KEY_P8_BASE64: ${{ secrets.AC_API_KEY_P8 }}
+        run: echo "$AC_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/ac_api_key.p8"
+
+      - name: Notarize, staple + generate EdDSA-signed appcast
+        env:
+          AC_API_KEY_PATH: ${{ runner.temp }}/ac_api_key.p8
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: ./notarize.sh
+
+      - name: Deploy mwitch-site to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npm i -g vercel@latest
+          vercel deploy --prod --yes --token "$VERCEL_TOKEN" --cwd mwitch-site
+
+      - name: Scrub key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/ac_api_key.p8" "$RUNNER_TEMP/cert.p12"

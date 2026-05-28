@@ -58,13 +58,39 @@ mwitch ships with [Sparkle](https://sparkle-project.org). Installed copies silen
 
 ## Releasing
 
-1. Bump the marketing version in the top-level `VERSION` file (e.g. `0.2.0` → `0.2.1`).
-2. **Commit the bump.** The build number (`CFBundleVersion`) is the git commit count, so the commit is what advances it — and Sparkle uses `CFBundleVersion` to decide an update is newer. Building on a dirty/uncommitted tree reuses the current count and Sparkle won't offer the update.
-3. `./build.sh` — builds, embeds + signs Sparkle, stamps the version, signs with Developer ID.
-4. `./notarize.sh` — notarizes + staples, regenerates `appcast.xml` (EdDSA-signed with the key in your keychain), and stages `appcast.xml` + `mwitch.zip` into `mwitch-site/`.
-5. `cd mwitch-site && vercel deploy --prod --yes` — publishes. Every installed copy upgrades itself within a day.
+### Automated (tag → ship)
 
-**One-time setup:** the EdDSA signing key is created once with Sparkle's `generate_keys` tool and stored in your login keychain. **Back it up** (export from Keychain Access, item “Private key for signing Sparkle updates”). If you lose it you can never sign an update the installed base will accept, and auto-update breaks permanently for existing users.
+Push a version tag and GitHub Actions does everything — build, sign, notarize, EdDSA-sign the appcast, deploy:
+
+```sh
+git tag v0.2.1 && git push origin v0.2.1
+```
+
+The workflow (`.github/workflows/release.yml`) runs on a macOS runner: it derives the marketing version from the tag (`v0.2.1` → `0.2.1`), the build number from the commit count, then runs `build.sh` + `notarize.sh` and deploys `mwitch-site` to Vercel production. You can also trigger it manually from the Actions tab (it takes a version input). Installed copies (0.2.0+) auto-update within a day.
+
+**Required GitHub secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | What it is / how to get it |
+|---|---|
+| `DEVELOPER_ID_CERT_P12` | Your "Developer ID Application" cert exported from Keychain Access as `.p12`, then `base64 -i cert.p12 \| pbcopy` |
+| `DEVELOPER_ID_CERT_PASSWORD` | The password you set when exporting the `.p12` |
+| `SPARKLE_PRIVATE_KEY` | Export the **existing** EdDSA key: run `generate_keys -x key.txt` (find it under `.build/artifacts/sparkle/Sparkle/bin/`), approve the keychain prompt, paste the file contents. Must be the same key already pinned in `Info.plist`. |
+| `AC_API_KEY_P8` | App Store Connect API key (`.p8`, Developer → Integrations → keys with "Developer" access), `base64`-encoded |
+| `AC_API_KEY_ID` | The API key's Key ID |
+| `AC_API_ISSUER_ID` | The App Store Connect issuer ID |
+| `VERCEL_TOKEN` | A Vercel access token (vercel.com → Settings → Tokens) |
+
+> Security note: these secrets let CI sign and ship code to every user's Mac. If they leak, an attacker could push a malicious auto-update. Keep repo access tight; rotate the API key / Vercel token if ever exposed.
+
+### Manual (local fallback)
+
+1. Bump `VERSION` (e.g. `0.2.0` → `0.2.1`).
+2. **Commit the bump** — the build number is the git commit count, so the commit advances it, and Sparkle uses `CFBundleVersion` to decide an update is newer. Building on an uncommitted tree reuses the current count and Sparkle won't offer the update.
+3. `./build.sh` — build, embed + sign Sparkle, stamp the version, sign with Developer ID.
+4. `./notarize.sh` — notarize + staple, regenerate the EdDSA-signed `appcast.xml`, stage it + `mwitch.zip` into `mwitch-site/`.
+5. `cd mwitch-site && vercel deploy --prod --yes`.
+
+**Back up the EdDSA key.** It lives only in your login keychain (Keychain Access → "Private key for signing Sparkle updates", or `generate_keys -x`). Lose it and you can never sign an update the installed base will accept — auto-update breaks permanently for existing users.
 
 ## Architecture
 
