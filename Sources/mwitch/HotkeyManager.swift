@@ -15,6 +15,7 @@ final class HotkeyManager {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var switcherCommitGate = SwitcherCommitGate()
 
     func register() {
         let mask: CGEventMask =
@@ -57,15 +58,16 @@ final class HotkeyManager {
         // macOS occasionally disables the tap (timeout, very high event load).
         // Re-enable and let the event through.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            switcherCommitGate.reset()
             if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
 
         let flags = event.flags
         let cmdHeld = flags.contains(.maskCommand)
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
         if type == .keyDown {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if cmdHeld && keyCode == Int64(kVK_Tab) {
                 // The tap callback runs on the main runloop, so we can call
                 // straight through without a dispatch_async hop. Trims the
@@ -75,12 +77,22 @@ final class HotkeyManager {
                 } else {
                     onPress?()
                 }
+                switcherCommitGate.arm()
                 return nil // swallow before WindowServer sees it
             }
         }
 
-        if type == .flagsChanged && !cmdHeld {
-            onModifiersReleased?()
+        let changedCommandKey = keyCode == Int64(kVK_Command) || keyCode == Int64(kVK_RightCommand)
+        if type == .flagsChanged {
+            switch switcherCommitGate.resolvePendingCommit(
+                commandStillHeld: cmdHeld,
+                changedKeyIsCommand: changedCommandKey
+            ) {
+            case .commit:
+                onModifiersReleased?()
+            case .discardStaleWait, .keepWaiting:
+                break
+            }
         }
 
         return Unmanaged.passUnretained(event)
@@ -94,4 +106,38 @@ final class HotkeyManager {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
     }
+}
+
+/// Tracks whether mwitch has intercepted Cmd+Tab/Cmd+Shift+Tab and should
+/// commit the switcher when the matching Command-key release arrives.
+struct SwitcherCommitGate {
+    private var waitingForCommandRelease = false
+
+    /// Called after the event tap swallows Cmd+Tab or Cmd+Shift+Tab.
+    mutating func arm() {
+        waitingForCommandRelease = true
+    }
+
+    mutating func reset() {
+        waitingForCommandRelease = false
+    }
+
+    /// Resolves the pending Cmd+Tab commit when all modifiers are released.
+    /// A Command-key release commits; any other release clears stale state.
+    mutating func resolvePendingCommit(
+        commandStillHeld: Bool,
+        changedKeyIsCommand: Bool
+    ) -> CommandReleaseGateResult {
+        guard waitingForCommandRelease else { return .keepWaiting }
+        guard !commandStillHeld else { return .keepWaiting }
+
+        waitingForCommandRelease = false
+        return changedKeyIsCommand ? .commit : .discardStaleWait
+    }
+}
+
+enum CommandReleaseGateResult {
+    case keepWaiting
+    case discardStaleWait
+    case commit
 }
