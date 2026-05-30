@@ -67,6 +67,22 @@ struct SwitcherListState {
         return entries.firstIndex(of: filtered[row])
     }
 
+    /// Selects a row in the currently visible filtered list and returns the
+    /// matching absolute index in `entries`.
+    mutating func selectFilteredRow(_ row: Int) -> Int? {
+        guard let absoluteIndex = absoluteIndex(forFilteredRow: row) else { return nil }
+        selectedRow = row
+        return absoluteIndex
+    }
+
+    var snapshot: SwitcherPanelSnapshot {
+        SwitcherPanelSnapshot(
+            entries: filtered,
+            searchBuffer: searchBuffer,
+            selectedRow: selectedRow
+        )
+    }
+
     /// Current selection expressed in the controller's full-list coordinate
     /// system.
     var selectedAbsoluteIndex: Int? {
