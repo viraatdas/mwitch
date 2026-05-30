@@ -5,11 +5,11 @@ import SwiftUI
 ///     [hint] [app name, right-aligned] [icon] [window title, left-aligned]
 /// Typing filters by app + title; release Cmd commits.
 final class SwitcherPanel: NSPanel {
-    private weak var controller: SwitcherController?
+    private weak var panelDelegate: SwitcherPanelDelegate?
 
     private var hostingView: NSHostingView<SwitcherPanelView>?
+    private var snapshot = SwitcherPanelSnapshot.empty
 
-    private var listState = SwitcherListState()
     private var keyMonitor: Any?
     // Forces SwiftUI hover state to reset each time the reused panel is shown.
     private var presentationID = 0
@@ -21,8 +21,8 @@ final class SwitcherPanel: NSPanel {
     private let selectionInsetY: CGFloat = 3
     private let selectionCornerRadius: CGFloat = 8
 
-    init(controller: SwitcherController) {
-        self.controller = controller
+    init(delegate: SwitcherPanelDelegate) {
+        self.panelDelegate = delegate
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: 600),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -61,32 +61,13 @@ final class SwitcherPanel: NSPanel {
 
     // MARK: - Lifecycle
 
-    func update(entries: [WindowEntry], selection: Int) {
-        let selectedRow = listState.update(entries: entries, selection: selection)
+    func render(_ snapshot: SwitcherPanelSnapshot, scrollTarget: Int? = nil, reposition: Bool = false) {
+        self.snapshot = snapshot
         sizeToContents()
-        renderContent(scrollTarget: selectedRow)
-    }
-
-    func setSelection(_ index: Int) {
-        let selectedRow = listState.setSelection(absoluteIndex: index)
-        renderContent(scrollTarget: selectedRow)
-    }
-
-    func clearSelection() {
-        listState.clearSelection()
-        renderContent()
-    }
-
-    /// Advances through the rows that are currently visible in the panel and
-    /// returns the corresponding absolute entry index for the controller.
-    func advanceVisibleSelection(reverse: Bool = false) -> Int? {
-        let selectedAbsoluteIndex = listState.moveSelection(by: reverse ? -1 : 1)
-        guard let selectedAbsoluteIndex, let selectedRow = listState.selectedRow else {
-            clearSelection()
-            return nil
+        renderContent(scrollTarget: scrollTarget)
+        if reposition {
+            positionOnActiveScreen()
         }
-        renderContent(scrollTarget: selectedRow)
-        return selectedAbsoluteIndex
     }
 
     /// Call once after init to pre-warm the WindowServer connection. Subsequent
@@ -99,7 +80,7 @@ final class SwitcherPanel: NSPanel {
 
     func present() {
         presentationID += 1
-        renderContent()
+        renderContent(scrollTarget: snapshot.selectedRow)
         positionOnActiveScreen()
         orderFrontRegardless()
         makeKey()
@@ -114,8 +95,8 @@ final class SwitcherPanel: NSPanel {
     private func sizeToContents() {
         guard let screen = activeScreen() else { return }
         let usable = screen.visibleFrame.height - 120
-        let rowsHeight = CGFloat(max(1, listState.filtered.count)) * rowHeight
-        let chrome: CGFloat = 12 + (listState.searchBuffer.isEmpty ? 0 : 26)
+        let rowsHeight = CGFloat(max(1, snapshot.entries.count)) * rowHeight
+        let chrome: CGFloat = 12 + (snapshot.searchBuffer.isEmpty ? 0 : 26)
         let desired = rowsHeight + chrome
         let height = min(usable, max(rowHeight + chrome, desired))
         var f = frame
@@ -152,49 +133,34 @@ final class SwitcherPanel: NSPanel {
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         switch event.keyCode {
         case 53: // Escape
-            controller?.cancel()
+            panelDelegate?.switcherPanel(self, didPerform: .cancel)
             return true
         case 36, 76: // Return / numpad Enter
-            controller?.commitIfVisible()
+            panelDelegate?.switcherPanel(self, didPerform: .commit)
             return true
         case 125: // Down
-            moveSelection(by: 1); return true
+            panelDelegate?.switcherPanel(self, didPerform: .moveSelection(delta: 1))
+            return true
         case 126: // Up
-            moveSelection(by: -1); return true
+            panelDelegate?.switcherPanel(self, didPerform: .moveSelection(delta: -1))
+            return true
         case 48: // Tab
-            moveSelection(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+            panelDelegate?.switcherPanel(
+                self,
+                didPerform: .moveSelection(delta: event.modifierFlags.contains(.shift) ? -1 : 1)
+            )
             return true
         case 51: // Delete
-            applyFilter(selectedAbsoluteIndex: listState.deleteLastSearchCharacter())
+            panelDelegate?.switcherPanel(self, didPerform: .deleteLastSearchCharacter)
             return true
         default:
             if let chars = event.charactersIgnoringModifiers,
                let scalar = chars.unicodeScalars.first,
                scalar.value >= 0x20, scalar.value < 0x7F {
-                applyFilter(selectedAbsoluteIndex: listState.appendSearchCharacter(Character(scalar)))
+                panelDelegate?.switcherPanel(self, didPerform: .appendSearchCharacter(Character(scalar)))
                 return true
             }
             return false
-        }
-    }
-
-    private func moveSelection(by delta: Int) {
-        guard let selectedAbsoluteIndex = advanceVisibleSelection(reverse: delta < 0) else {
-            controller?.clearSelection(updatePanel: false)
-            return
-        }
-        controller?.setSelection(selectedAbsoluteIndex, updatePanel: false)
-    }
-
-    private func applyFilter(selectedAbsoluteIndex: Int?) {
-        sizeToContents()
-        positionOnActiveScreen()
-        if let selectedAbsoluteIndex, let selectedRow = listState.selectedRow {
-            renderContent(scrollTarget: selectedRow)
-            controller?.setSelection(selectedAbsoluteIndex, updatePanel: false)
-        } else {
-            clearSelection()
-            controller?.clearSelection(updatePanel: false)
         }
     }
 
@@ -202,19 +168,11 @@ final class SwitcherPanel: NSPanel {
         hostingView?.rootView = makePanelView(scrollTarget: scrollTarget)
     }
 
-    private func selectFilteredRow(_ row: Int) {
-        guard let abs = listState.absoluteIndex(forFilteredRow: row) else { return }
-        guard listState.selectedRow != row else { return }
-        _ = listState.setSelection(absoluteIndex: abs)
-        renderContent()
-        controller?.setSelection(abs, updatePanel: false)
-    }
-
     private func makePanelView(scrollTarget: Int? = nil) -> SwitcherPanelView {
         SwitcherPanelView(
-            entries: listState.filtered,
-            searchBuffer: listState.searchBuffer,
-            selectedRow: listState.selectedRow,
+            entries: snapshot.entries,
+            searchBuffer: snapshot.searchBuffer,
+            selectedRow: snapshot.selectedRow,
             scrollTarget: scrollTarget,
             presentationID: presentationID,
             rowHeight: rowHeight,
@@ -222,17 +180,17 @@ final class SwitcherPanel: NSPanel {
             selectionInsetY: selectionInsetY,
             selectionCornerRadius: selectionCornerRadius,
             onSelect: { [weak self] row in
-                self?.selectFilteredRow(row)
+                guard let self else { return }
+                self.panelDelegate?.switcherPanel(self, didPerform: .selectFilteredRow(row))
             },
             onCommit: { [weak self] row in
-                guard let self, let abs = self.listState.absoluteIndex(forFilteredRow: row) else { return }
-                self.controller?.setSelection(abs, updatePanel: false)
-                self.controller?.commitIfVisible()
+                guard let self else { return }
+                self.panelDelegate?.switcherPanel(self, didPerform: .commitFilteredRow(row))
             }
         )
     }
 
-    private var panelIsActive: Bool { (controller?.isVisible ?? false) }
+    private var panelIsActive: Bool { panelDelegate?.switcherPanelIsActive ?? false }
 }
 
 // MARK: - SwiftUI content
