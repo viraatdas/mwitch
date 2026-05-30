@@ -1,18 +1,18 @@
 import Cocoa
+import SwiftUI
 
 /// Centered floating panel with the row layout:
 ///     [hint] [app name, right-aligned] [icon] [window title, left-aligned]
 /// Typing filters by app + title; release Cmd commits.
-final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
+final class SwitcherPanel: NSPanel {
     private weak var controller: SwitcherController?
 
-    private let tableView = NSTableView()
-    private let scrollView = NSScrollView()
-    private let visualEffect = NSVisualEffectView()
-    private let searchLabel = NSTextField(labelWithString: "")
+    private var hostingView: NSHostingView<SwitcherPanelView>?
 
     private var listState = SwitcherListState()
     private var keyMonitor: Any?
+    // Forces SwiftUI hover state to reset each time the reused panel is shown.
+    private var presentationID = 0
 
     private let rowHeight: CGFloat = 38
     private let panelWidth: CGFloat = 620
@@ -49,74 +49,32 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
 
     private func setupContent() {
         guard let content = contentView else { return }
-
-        visualEffect.frame = content.bounds
-        visualEffect.autoresizingMask = [.width, .height]
-        visualEffect.material = .popover
-        visualEffect.blendingMode = .behindWindow
-        visualEffect.state = .active
-        visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = cornerRadius
-        visualEffect.layer?.masksToBounds = true
-        visualEffect.layer?.borderWidth = 1
-        visualEffect.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
-        content.addSubview(visualEffect)
-
-        searchLabel.frame = NSRect(x: 14, y: visualEffect.bounds.height - 26,
-                                   width: panelWidth - 28, height: 18)
-        searchLabel.autoresizingMask = [.minYMargin, .width]
-        searchLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        searchLabel.textColor = .tertiaryLabelColor
-        searchLabel.isHidden = true
-        visualEffect.addSubview(searchLabel)
-
-        scrollView.frame = visualEffect.bounds.insetBy(dx: 6, dy: 6)
-        scrollView.autoresizingMask = [.width, .height]
-        scrollView.hasVerticalScroller = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.drawsBackground = false
-        scrollView.backgroundColor = .clear
-
-        tableView.headerView = nil
-        tableView.backgroundColor = .clear
-        tableView.style = .plain
-        tableView.intercellSpacing = NSSize(width: 0, height: 0)
-        tableView.rowHeight = rowHeight
-        tableView.selectionHighlightStyle = .regular
-        tableView.allowsMultipleSelection = false
-        tableView.allowsEmptySelection = false
-        tableView.refusesFirstResponder = true
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.target = self
-        tableView.action = #selector(rowClicked(_:))
-
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("main"))
-        column.width = panelWidth - 12
-        column.resizingMask = .autoresizingMask
-        tableView.addTableColumn(column)
-
-        scrollView.documentView = tableView
-        visualEffect.addSubview(scrollView)
+        let host = NSHostingView(rootView: makePanelView())
+        host.frame = content.bounds
+        host.autoresizingMask = [.width, .height]
+        host.wantsLayer = true
+        host.layer?.cornerRadius = cornerRadius
+        host.layer?.masksToBounds = true
+        content.addSubview(host)
+        hostingView = host
     }
 
     // MARK: - Lifecycle
 
     func update(entries: [WindowEntry], selection: Int) {
         let selectedRow = listState.update(entries: entries, selection: selection)
-        updateSearchLabel()
         sizeToContents()
-        tableView.reloadData()
-        selectTableRow(selectedRow)
+        renderContent(scrollTarget: selectedRow)
     }
 
     func setSelection(_ index: Int) {
-        selectTableRow(listState.setSelection(absoluteIndex: index))
+        let selectedRow = listState.setSelection(absoluteIndex: index)
+        renderContent(scrollTarget: selectedRow)
     }
 
     func clearSelection() {
         listState.clearSelection()
-        tableView.selectRowIndexes(IndexSet(), byExtendingSelection: false)
+        renderContent()
     }
 
     /// Advances through the rows that are currently visible in the panel and
@@ -127,22 +85,21 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
             clearSelection()
             return nil
         }
-        selectTableRow(selectedRow)
+        renderContent(scrollTarget: selectedRow)
         return selectedAbsoluteIndex
     }
 
     /// Call once after init to pre-warm the WindowServer connection. Subsequent
     /// `present()` calls reuse the connection and are noticeably faster.
     func preWarm() {
-        SidebarRowView.insetX = selectionInsetX
-        SidebarRowView.insetY = selectionInsetY
-        SidebarRowView.radius = selectionCornerRadius
         installKeyMonitor()
         // Force the window backing store to be created up front.
         _ = self.contentView
     }
 
     func present() {
+        presentationID += 1
+        renderContent()
         positionOnActiveScreen()
         orderFrontRegardless()
         makeKey()
@@ -164,15 +121,6 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
         var f = frame
         f.size = NSSize(width: panelWidth, height: height)
         setFrame(f, display: false)
-
-        // Re-lay out the scroll area depending on whether search label is visible.
-        if listState.searchBuffer.isEmpty {
-            scrollView.frame = visualEffect.bounds.insetBy(dx: 6, dy: 6)
-        } else {
-            scrollView.frame = NSRect(x: 6, y: 6,
-                                      width: visualEffect.bounds.width - 12,
-                                      height: visualEffect.bounds.height - 32)
-        }
     }
 
     private func positionOnActiveScreen() {
@@ -239,12 +187,10 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
     }
 
     private func applyFilter(selectedAbsoluteIndex: Int?) {
-        updateSearchLabel()
-        tableView.reloadData()
         sizeToContents()
         positionOnActiveScreen()
         if let selectedAbsoluteIndex, let selectedRow = listState.selectedRow {
-            selectTableRow(selectedRow)
+            renderContent(scrollTarget: selectedRow)
             controller?.setSelection(selectedAbsoluteIndex, updatePanel: false)
         } else {
             clearSelection()
@@ -252,141 +198,225 @@ final class SwitcherPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate {
         }
     }
 
-    private func updateSearchLabel() {
-        if listState.searchBuffer.isEmpty {
-            searchLabel.isHidden = true
-        } else {
-            searchLabel.isHidden = false
-            searchLabel.stringValue = "Search: \(listState.searchBuffer)"
-        }
+    private func renderContent(scrollTarget: Int? = nil) {
+        hostingView?.rootView = makePanelView(scrollTarget: scrollTarget)
     }
 
-    private func selectTableRow(_ row: Int?) {
-        guard let row, listState.filtered.indices.contains(row) else {
-            tableView.selectRowIndexes(IndexSet(), byExtendingSelection: false)
-            return
-        }
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        tableView.scrollRowToVisible(row)
-    }
-
-    // MARK: - NSTableView
-
-    func numberOfRows(in tableView: NSTableView) -> Int { listState.filtered.count }
-
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        SidebarRowView()
-    }
-
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard listState.filtered.indices.contains(row) else { return nil }
-        let entry = listState.filtered[row]
-        let identifier = NSUserInterfaceItemIdentifier("row")
-        let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? RowCellView) ?? {
-            let c = RowCellView()
-            c.identifier = identifier
-            return c
-        }()
-        cell.configure(with: entry)
-        return cell
-    }
-
-    @objc private func rowClicked(_ sender: Any?) {
-        let row = tableView.clickedRow
+    private func selectFilteredRow(_ row: Int) {
         guard let abs = listState.absoluteIndex(forFilteredRow: row) else { return }
+        guard listState.selectedRow != row else { return }
+        _ = listState.setSelection(absoluteIndex: abs)
+        renderContent()
         controller?.setSelection(abs, updatePanel: false)
-        controller?.commitIfVisible()
+    }
+
+    private func makePanelView(scrollTarget: Int? = nil) -> SwitcherPanelView {
+        SwitcherPanelView(
+            entries: listState.filtered,
+            searchBuffer: listState.searchBuffer,
+            selectedRow: listState.selectedRow,
+            scrollTarget: scrollTarget,
+            presentationID: presentationID,
+            rowHeight: rowHeight,
+            selectionInsetX: selectionInsetX,
+            selectionInsetY: selectionInsetY,
+            selectionCornerRadius: selectionCornerRadius,
+            onSelect: { [weak self] row in
+                self?.selectFilteredRow(row)
+            },
+            onCommit: { [weak self] row in
+                guard let self, let abs = self.listState.absoluteIndex(forFilteredRow: row) else { return }
+                self.controller?.setSelection(abs, updatePanel: false)
+                self.controller?.commitIfVisible()
+            }
+        )
     }
 
     private var panelIsActive: Bool { (controller?.isVisible ?? false) }
 }
 
-// MARK: - Row views
+// MARK: - SwiftUI content
 
-final class SidebarRowView: NSTableRowView {
-    static var insetX: CGFloat = 7
-    static var insetY: CGFloat = 3
-    static var radius: CGFloat = 8
+struct SwitcherPanelView: View {
+    let entries: [WindowEntry]
+    let searchBuffer: String
+    let selectedRow: Int?
+    let scrollTarget: Int?
+    let presentationID: Int
+    let rowHeight: CGFloat
+    let selectionInsetX: CGFloat
+    let selectionInsetY: CGFloat
+    let selectionCornerRadius: CGFloat
+    let onSelect: (Int) -> Void
+    let onCommit: (Int) -> Void
 
-    override func drawSelection(in dirtyRect: NSRect) {
-        guard isSelected else { return }
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: Self.insetX, dy: Self.insetY),
-                                xRadius: Self.radius, yRadius: Self.radius)
-        NSColor.controlAccentColor.setFill()
-        path.fill()
+    @State private var initialPointerLocation: CGPoint?
+    @State private var isHoverSelectionEnabled = false
+
+    private let hoverActivationDistance: CGFloat = 1
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !searchBuffer.isEmpty {
+                Text("Search: \(searchBuffer)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .frame(height: 26)
+            }
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(entries.enumerated()), id: \.offset) { row, entry in
+                            SwitcherRowView(
+                                entry: entry,
+                                isSelected: row == selectedRow,
+                                rowHeight: rowHeight,
+                                selectionInsetX: selectionInsetX,
+                                selectionInsetY: selectionInsetY,
+                                selectionCornerRadius: selectionCornerRadius
+                            )
+                            .id(row)
+                            .contentShape(Rectangle())
+                            .onContinuousHover(coordinateSpace: .global) { phase in
+                                handleRowHover(phase, row: row)
+                            }
+                            .onTapGesture {
+                                onSelect(row)
+                                onCommit(row)
+                            }
+                        }
+                    }
+                    .padding(6)
+                    .contentShape(Rectangle())
+                    .onContinuousHover(coordinateSpace: .global) { phase in
+                        updateHoverGate(phase)
+                    }
+                }
+                .onAppear {
+                    resetHoverGate()
+                    scrollToTarget(proxy)
+                }
+                .onChange(of: scrollTarget) { _ in
+                    scrollToTarget(proxy)
+                }
+                .onChange(of: presentationID) { _ in
+                    resetHoverGate()
+                }
+            }
+        }
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
+        )
     }
 
-    override var interiorBackgroundStyle: NSView.BackgroundStyle {
-        isSelected ? .emphasized : .normal
+    private func handleRowHover(_ phase: HoverPhase, row: Int) {
+        guard isHoverSelectionEnabled else { return }
+
+        switch phase {
+        case .active:
+            guard entries.indices.contains(row) else { return }
+            guard selectedRow != row else { return }
+
+            onSelect(row)
+
+        case .ended:
+            break
+        }
+    }
+
+    private func updateHoverGate(_ phase: HoverPhase) {
+        switch phase {
+        case .active(let location):
+            if initialPointerLocation == nil {
+                initialPointerLocation = location
+                return
+            }
+
+            guard !isHoverSelectionEnabled else { return }
+            guard let initialPointerLocation else { return }
+
+            let distanceFromInitial = hypot(
+                location.x - initialPointerLocation.x,
+                location.y - initialPointerLocation.y
+            )
+
+            if distanceFromInitial >= hoverActivationDistance {
+                isHoverSelectionEnabled = true
+            }
+
+        case .ended:
+            resetHoverGate()
+        }
+    }
+
+    private func resetHoverGate() {
+        initialPointerLocation = nil
+        isHoverSelectionEnabled = false
+    }
+
+    private func scrollToTarget(_ proxy: ScrollViewProxy) {
+        guard let scrollTarget, entries.indices.contains(scrollTarget) else { return }
+        proxy.scrollTo(scrollTarget)
     }
 }
 
-final class RowCellView: NSTableCellView {
-    private let appNameLabel = NSTextField(labelWithString: "")
-    private let iconView = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
+private struct SwitcherRowView: View {
+    let entry: WindowEntry
+    let isSelected: Bool
+    let rowHeight: CGFloat
+    let selectionInsetX: CGFloat
+    let selectionInsetY: CGFloat
+    let selectionCornerRadius: CGFloat
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        buildLayout()
-    }
+    private let appWidth: CGFloat = 220
+    private let iconSize: CGFloat = 22
 
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        buildLayout()
-    }
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(entry.appName)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color(nsColor: .secondaryLabelColor))
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(width: appWidth, alignment: .trailing)
 
-    private func buildLayout() {
-        appNameLabel.font = .systemFont(ofSize: 13, weight: .regular)
-        appNameLabel.textColor = .secondaryLabelColor
-        appNameLabel.alignment = .right
-        appNameLabel.lineBreakMode = .byTruncatingHead
-        appNameLabel.maximumNumberOfLines = 1
+            Group {
+                if let appIcon = entry.appIcon {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: "app.dashed")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: iconSize, height: iconSize)
 
-        iconView.imageScaling = .scaleProportionallyDown
-
-        titleLabel.font = .systemFont(ofSize: 13, weight: .regular)
-        titleLabel.textColor = .labelColor
-        titleLabel.alignment = .left
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.maximumNumberOfLines = 1
-
-        for v in [appNameLabel, iconView, titleLabel] as [NSView] {
-            v.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(v)
+            Text(entry.title)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(isSelected ? Color.white : Color(nsColor: .labelColor))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-
-        let appWidth: CGFloat = 220
-        let iconSize: CGFloat = 22
-
-        NSLayoutConstraint.activate([
-            appNameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            appNameLabel.widthAnchor.constraint(equalToConstant: appWidth),
-            appNameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            iconView.leadingAnchor.constraint(equalTo: appNameLabel.trailingAnchor, constant: 10),
-            iconView.widthAnchor.constraint(equalToConstant: iconSize),
-            iconView.heightAnchor.constraint(equalToConstant: iconSize),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
-            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-    }
-
-    func configure(with entry: WindowEntry) {
-        appNameLabel.stringValue = entry.appName
-        iconView.image = entry.appIcon
-        titleLabel.stringValue = entry.title
-    }
-
-    override var backgroundStyle: NSView.BackgroundStyle {
-        didSet {
-            let emph = (backgroundStyle == .emphasized)
-            titleLabel.textColor = emph ? .white : .labelColor
-            appNameLabel.textColor = emph ? NSColor.white.withAlphaComponent(0.85)
-                                          : .secondaryLabelColor
+        .padding(.horizontal, 16)
+        .frame(height: rowHeight)
+        .background(alignment: .center) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: selectionCornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlAccentColor))
+                    .padding(.horizontal, selectionInsetX)
+                    .padding(.vertical, selectionInsetY)
+            }
         }
     }
 }
