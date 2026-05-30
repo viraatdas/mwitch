@@ -140,6 +140,13 @@
     color: var(--fg-dim);
     font-weight: 300;
   }
+  .secondary-link {
+    color: var(--fg-soft);
+    font-size: 13px;
+    font-weight: 400;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 
   .shortcut {
     margin-top: 1.5rem;
@@ -287,6 +294,41 @@
     font-size: 13px;
     font-weight: 300;
   }
+  .install-options {
+    display: grid;
+    gap: 1.75rem;
+    margin-bottom: 2rem;
+  }
+  .install-option {
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--fg-faint);
+  }
+  .install-option:last-child { padding-bottom: 0; }
+  .install-option h3 {
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.35rem;
+  }
+  .install-option p {
+    color: var(--fg-soft);
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.55;
+    max-width: 620px;
+  }
+  .terminal {
+    display: block;
+    margin-top: 0.9rem;
+    padding: 0.85rem 0.95rem;
+    overflow-x: auto;
+    border: 1px solid var(--kbd-bd);
+    border-radius: 8px;
+    background: var(--kbd-bg);
+    color: var(--fg);
+    font: 400 12.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+    white-space: pre;
+  }
   .steps + p.note code {
     font: 400 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
     padding: 1px 6px;
@@ -343,11 +385,12 @@
       A fast, native macOS window switcher. One row per window across every app, not one icon per app. Apple Silicon. Open source.
     </p>
     <div class="actions">
-      <a class="cta" href="/mwitch.zip" download>
+      <a class="cta" href="https://github.com/viraatdas/mwitch/releases/latest/download/mwitch.zip">
         Download for macOS <span class="arrow">→</span>
       </a>
-      <span class="cta-meta">Apple Silicon · macOS 13+ · ~1 MB</span>
+      <span class="cta-meta">Apple Silicon · macOS 13+ · auto-updates</span>
     </div>
+    <a class="secondary-link" href="#install">Or install with Homebrew</a>
     <div class="shortcut">
       Press <span class="kbd">Cmd</span> + <span class="kbd">Tab</span> after launch.
     </div>
@@ -390,9 +433,20 @@
 
   <section id="install">
     <h2>Install</h2>
+    <div class="install-options">
+      <div class="install-option">
+        <h3>Homebrew</h3>
+        <p>Installs the signed, notarized app from GitHub Releases. Sparkle keeps mwitch updated automatically, and the cask is updated from the same release zip.</p>
+        <code class="terminal">brew tap viraatdas/mwitch https://github.com/viraatdas/mwitch
+brew install --cask mwitch</code>
+      </div>
+      <div class="install-option">
+        <h3>Direct download</h3>
+        <p><a class="secondary-link" href="https://github.com/viraatdas/mwitch/releases/latest/download/mwitch.zip">Download the latest release zip</a>, unzip it, and drag <strong>mwitch.app</strong> into <code>/Applications</code>.</p>
+      </div>
+    </div>
     <ol class="steps">
-      <li>Download the zip, unzip, and drag <strong>mwitch.app</strong> into <code>/Applications</code>.</li>
-      <li>Double-click <strong>mwitch.app</strong> to launch. Signed and notarized by Apple, so no Gatekeeper warnings.</li>
+      <li>Open <strong>mwitch.app</strong> from Applications. Signed and notarized by Apple, so no Gatekeeper warnings.</li>
       <li>
         Grant <strong>Accessibility</strong> permission. A macOS dialog will pop up. Click <strong>Open System Settings</strong>, then toggle <strong>mwitch</strong> on in the list.
         <span class="why">Lets mwitch intercept <span class="kbd">Cmd</span> + <span class="kbd">Tab</span> and raise the window you pick.</span>
@@ -416,7 +470,8 @@
   <footer>
     <div class="left">built by <a href="https://viraat.dev" target="_blank" rel="noopener">viraat</a></div>
     <div>
-      <a href="/mwitch.zip" download>download</a>
+      <a href="https://github.com/viraatdas/mwitch/releases/latest/download/mwitch.zip">download</a>
+      <a href="https://github.com/viraatdas/mwitch" target="_blank" rel="noopener">github</a>
       <a href="https://viraat.dev" target="_blank" rel="noopener">viraat.dev</a>
     </div>
   </footer>

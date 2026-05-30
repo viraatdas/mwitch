@@ -2,8 +2,9 @@ name: Release
 
 # Tag a release and it ships itself:
 #   git tag v0.2.1 && git push origin v0.2.1
-# Builds + signs the arm64 .app, notarizes + staples it, regenerates the
-# EdDSA-signed Sparkle appcast, and deploys mwitch-site to Vercel production.
+# Builds + signs the arm64 .app, notarizes + staples it, publishes the zip to a
+# GitHub Release, regenerates the EdDSA-signed Sparkle appcast, deploys
+# mwitch-site to Vercel production, and updates the Homebrew cask SHA.
 # Every installed copy (0.2.0+) then auto-updates within a day.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
@@ -27,7 +28,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
@@ -51,6 +52,7 @@ jobs:
             V="${GITHUB_REF_NAME#v}"
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
           echo "Shipping version $V"
 
       - name: Import Developer ID signing certificate
@@ -88,8 +90,30 @@ jobs:
           AC_API_KEY_PATH: ${{ runner.temp }}/ac_api_key.p8
           AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
           AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          MWITCH_DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/v${{ steps.ver.outputs.version }}/
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: ./notarize.sh
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          TITLE="mwitch $TAG"
+          NOTES="Signed and notarized mwitch release. The zip is also used by Sparkle auto-update and the Homebrew cask."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/mwitch.zip mwitch-site/appcast.xml \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG" build/mwitch.zip mwitch-site/appcast.xml \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
 
       - name: Deploy mwitch-site to Vercel (production)
         env:
@@ -97,6 +121,28 @@ jobs:
         run: |
           npm i -g vercel@latest
           vercel deploy --prod --yes --token "$VERCEL_TOKEN" --cwd mwitch-site
+
+      - name: Update Homebrew cask on main
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          SHA256="$(shasum -a 256 build/mwitch.zip | awk '{print $1}')"
+          export VERSION SHA256
+          perl -0pi -e 's/version "[^"]+"/version "$ENV{VERSION}"/; s/sha256 (?:"[a-f0-9]{64}"|:no_check)/sha256 "$ENV{SHA256}"/' Casks/mwitch.rb
+          cp Casks/mwitch.rb "$RUNNER_TEMP/mwitch.rb"
+          git fetch origin main
+          git reset --hard
+          git checkout -B main origin/main
+          cp "$RUNNER_TEMP/mwitch.rb" Casks/mwitch.rb
+          git add Casks/mwitch.rb
+          if git diff --cached --quiet; then
+            echo "Homebrew cask already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "brew: update mwitch cask for v$VERSION"
+          git push origin HEAD:main
 
       - name: Scrub key material
         if: always()

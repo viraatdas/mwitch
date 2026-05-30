@@ -21,10 +21,35 @@ Each row shows the app's icon, the window title, and the app name underneath. Wi
 
 - Apple Silicon Mac (M1 or later)
 - macOS 13 (Ventura) or later
+
+## Install
+
+### Homebrew
+
+```sh
+brew tap viraatdas/mwitch https://github.com/viraatdas/mwitch
+brew install --cask mwitch
+```
+
+The cask installs the signed, notarized zip from GitHub Releases. Sparkle keeps the app updated automatically in the background; `brew upgrade --cask mwitch` also follows the release-pinned cask after each tagged release.
+
+### Direct download
+
+Download the latest release zip:
+
+```sh
+open https://github.com/viraatdas/mwitch/releases/latest/download/mwitch.zip
+```
+
+Unzip it and drag `mwitch.app` into `/Applications`.
+
+## Build
+
+Requirements for building from source:
+
 - Xcode command-line tools (`xcode-select --install`)
 - Swift 5.9+
 
-## Build
 
 ```sh
 ./build.sh
@@ -60,7 +85,7 @@ mwitch ships with [Sparkle](https://sparkle-project.org). Installed copies silen
 
 ### Automated (tag → ship)
 
-Push a version tag and GitHub Actions does everything — build, sign, notarize, EdDSA-sign the appcast, deploy:
+Push a version tag and GitHub Actions does everything — build, sign, notarize, publish the GitHub Release zip, EdDSA-sign the appcast, deploy the website, and update the Homebrew cask SHA:
 
 ```sh
 git tag v0.2.1 && git push origin v0.2.1
