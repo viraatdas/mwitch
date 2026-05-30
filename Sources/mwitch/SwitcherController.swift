@@ -30,19 +30,27 @@ final class SwitcherController {
             show()
         } else {
             guard entries.count > 0 else { return }
-            if reverse {
-                selection = (selection - 1 + entries.count) % entries.count
+            if let selected = panel?.advanceVisibleSelection(reverse: reverse) {
+                selection = selected
             } else {
-                selection = (selection + 1) % entries.count
+                clearSelection(updatePanel: false)
             }
-            panel?.setSelection(selection)
         }
     }
 
-    func setSelection(_ index: Int) {
+    func setSelection(_ index: Int, updatePanel: Bool = true) {
         guard index >= 0, index < entries.count else { return }
         selection = index
-        panel?.setSelection(index)
+        if updatePanel {
+            panel?.setSelection(index)
+        }
+    }
+
+    func clearSelection(updatePanel: Bool = true) {
+        selection = -1
+        if updatePanel {
+            panel?.clearSelection()
+        }
     }
 
     func commitIfVisible() {
