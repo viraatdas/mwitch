@@ -92,9 +92,7 @@ struct SwitcherListState {
         if needle.isEmpty {
             filtered = entries
         } else {
-            filtered = entries.filter { entry in
-                Self.fuzzyMatch(needle: needle, haystack: "\(entry.appName) \(entry.title)".lowercased())
-            }
+            filtered = SwitcherSearch.rankedResults(for: entries, query: needle)
         }
 
         guard !filtered.isEmpty else {
@@ -106,13 +104,4 @@ struct SwitcherListState {
         return absoluteIndex(forFilteredRow: 0)
     }
 
-    static func fuzzyMatch(needle: String, haystack: String) -> Bool {
-        if haystack.contains(needle) { return true }
-        var idx = haystack.startIndex
-        for ch in needle {
-            guard let found = haystack[idx...].firstIndex(of: ch) else { return false }
-            idx = haystack.index(after: found)
-        }
-        return true
-    }
 }
