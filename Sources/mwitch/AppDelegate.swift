@@ -67,19 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             btn.image?.isTemplate = true
         }
         let menu = NSMenu()
-        menu.addItem(withTitle: "Show Switcher", action: #selector(showSwitcher), keyEquivalent: "").target = self
         let updateItem = NSMenuItem(title: "Check for Updates…",
                                     action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
                                     keyEquivalent: "")
         updateItem.target = updaterController
         menu.addItem(updateItem)
-        menu.addItem(NSMenuItem.separator())
-        let accItem = NSMenuItem(title: "Open Accessibility Settings…", action: #selector(openAccessibility), keyEquivalent: "")
-        accItem.target = self
-        menu.addItem(accItem)
-        let scItem = NSMenuItem(title: "Open Screen Recording Settings…", action: #selector(openScreenRecording), keyEquivalent: "")
-        scItem.target = self
-        menu.addItem(scItem)
         menu.addItem(NSMenuItem.separator())
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         loginItem.target = self
@@ -89,23 +81,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Quit mwitch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
-    }
-
-    @objc private func showSwitcher() {
-        switcher.advance()
-        switcher.commitIfVisible()
-    }
-
-    @objc private func openAccessibility() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    @objc private func openScreenRecording() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func enableLaunchAtLoginIfFirstRun() {
@@ -137,4 +112,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
-
