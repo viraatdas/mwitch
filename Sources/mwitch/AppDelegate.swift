@@ -10,7 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var switcher: SwitcherController!
     private var hotkey: HotkeyManager!
     private var launchAtLoginMenuItem: NSMenuItem?
-    private var updaterController: SPUStandardUpdaterController!
+    private var updater: SPUUpdater!
+    private var updateUserDriver: MwitchUpdateUserDriver!
 
     private static let launchAtLoginFirstRunKey = "mwitch.launchAtLogin.firstRunHandled"
 
@@ -28,10 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enableLaunchAtLoginIfFirstRun()
         // Sparkle: silent background auto-update (SUAutomaticallyUpdate in
         // Info.plist). Created before the status menu so "Check for Updates…"
-        // can target it. startingUpdater: true kicks off the scheduled checks.
-        updaterController = SPUStandardUpdaterController(startingUpdater: true,
-                                                         updaterDelegate: nil,
-                                                         userDriverDelegate: nil)
+        // can target it. startUpdater() kicks off the scheduled checks.
+        setupUpdater()
         setupStatusItem()
 
         switcher = SwitcherController()
@@ -68,9 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let menu = NSMenu()
         let updateItem = NSMenuItem(title: "Check for Updates…",
-                                    action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                                    action: #selector(checkForUpdates),
                                     keyEquivalent: "")
-        updateItem.target = updaterController
+        updateItem.target = self
         menu.addItem(updateItem)
         menu.addItem(NSMenuItem.separator())
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
@@ -81,6 +80,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Quit mwitch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    private func setupUpdater() {
+        updateUserDriver = MwitchUpdateUserDriver(hostBundle: .main) {
+            Self.currentVersionDescription
+        }
+        updater = SPUUpdater(hostBundle: .main,
+                             applicationBundle: .main,
+                             userDriver: updateUserDriver,
+                             delegate: nil)
+        do {
+            try updater.start()
+        } catch {
+            MwitchLog.shared.line("updater: failed to start: \(error)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Unable to Check for Updates"
+                alert.informativeText = "The updater failed to start. Please install the latest version of mwitch from mwitch.viraat.dev."
+                alert.runModal()
+            }
+        }
+    }
+
+    private static var currentVersionDescription: String {
+        let info = Bundle.main.infoDictionary
+        let version = (info?["CFBundleShortVersionString"] as? String)
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
+        guard let build = (info?["CFBundleVersion"] as? String), !build.isEmpty else {
+            return version
+        }
+        return "\(version) (build \(build))"
     }
 
     private func enableLaunchAtLoginIfFirstRun() {
@@ -110,5 +141,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             MwitchLog.shared.line("launch-at-login: toggle failed: \(error)")
         }
+    }
+
+    @objc private func checkForUpdates() {
+        updater.checkForUpdates()
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates) {
+            return updater?.canCheckForUpdates ?? false
+        }
+        return true
+    }
+}
+
+private final class MwitchUpdateUserDriver: SPUStandardUserDriver {
+    private let versionProvider: () -> String
+
+    init(hostBundle: Bundle, versionProvider: @escaping () -> String) {
+        self.versionProvider = versionProvider
+        super.init(hostBundle: hostBundle, delegate: nil)
+    }
+
+    override func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        let nsError = error as NSError
+        let userInfo = nsError.userInfo.merging([
+            NSLocalizedDescriptionKey: "No New Updates",
+            NSLocalizedRecoverySuggestionErrorKey: "mwitch is up to date.\nCurrent version: \(versionProvider())",
+            NSLocalizedRecoveryOptionsErrorKey: ["OK"]
+        ]) { _, new in new }
+        let presentationError = NSError(domain: nsError.domain, code: nsError.code, userInfo: userInfo)
+        super.showUpdateNotFoundWithError(presentationError, acknowledgement: acknowledgement)
     }
 }
