@@ -1,12 +1,12 @@
 {
-  "headers": [
+  "redirects": [
     {
       "source": "/mwitch.zip",
-      "headers": [
-        { "key": "Content-Type", "value": "application/zip" },
-        { "key": "Cache-Control", "value": "public, max-age=300" }
-      ]
-    },
+      "destination": "https://github.com/viraatdas/mwitch/releases/latest/download/mwitch.zip",
+      "permanent": false
+    }
+  ],
+  "headers": [
     {
       "source": "/appcast.xml",
       "headers": [

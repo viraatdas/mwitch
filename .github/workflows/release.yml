@@ -122,7 +122,7 @@ jobs:
           npm i -g vercel@latest
           vercel deploy --prod --yes --token "$VERCEL_TOKEN" --cwd mwitch-site
 
-      - name: Update Homebrew cask on main
+      - name: Update release metadata on main
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
@@ -130,18 +130,20 @@ jobs:
           export VERSION SHA256
           perl -0pi -e 's/version "[^"]+"/version "$ENV{VERSION}"/; s/sha256 (?:"[a-f0-9]{64}"|:no_check)/sha256 "$ENV{SHA256}"/' Casks/mwitch.rb
           cp Casks/mwitch.rb "$RUNNER_TEMP/mwitch.rb"
+          cp mwitch-site/appcast.xml "$RUNNER_TEMP/appcast.xml"
           git fetch origin main
           git reset --hard
           git checkout -B main origin/main
           cp "$RUNNER_TEMP/mwitch.rb" Casks/mwitch.rb
-          git add Casks/mwitch.rb
+          cp "$RUNNER_TEMP/appcast.xml" mwitch-site/appcast.xml
+          git add Casks/mwitch.rb mwitch-site/appcast.xml
           if git diff --cached --quiet; then
-            echo "Homebrew cask already up to date."
+            echo "Release metadata already up to date."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "brew: update mwitch cask for v$VERSION"
+          git commit -m "release: update metadata for v$VERSION"
           git push origin HEAD:main
 
       - name: Scrub key material

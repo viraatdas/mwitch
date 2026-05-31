@@ -91,11 +91,10 @@ else
     "$GEN" --download-url-prefix "$DOWNLOAD_URL_PREFIX" "$ACDIR"
 fi
 
-echo "==> Staging appcast.xml + mwitch.zip into mwitch-site/"
+echo "==> Staging appcast.xml into mwitch-site/"
 cp "$ACDIR/appcast.xml" "$ROOT/mwitch-site/appcast.xml"
-cp "$ROOT/build/mwitch.zip" "$ROOT/mwitch-site/mwitch.zip"
 
 echo ""
-echo "Notarized + stapled. appcast.xml + mwitch.zip staged in mwitch-site/."
+echo "Notarized + stapled. appcast.xml staged in mwitch-site/."
 echo "Deploy to push the update to all installed copies:"
 echo "    cd mwitch-site && vercel deploy --prod --yes"
