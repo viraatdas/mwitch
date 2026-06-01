@@ -329,6 +329,30 @@
     font: 400 12.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace;
     white-space: pre;
   }
+  .terminal-wrap { position: relative; }
+  .terminal-wrap .terminal { padding-right: 4.25rem; }
+  .copy-btn {
+    position: absolute;
+    top: 0.9rem;
+    right: 0.55rem;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--kbd-bd);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg-soft);
+    font: 500 11px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .copy-btn:hover { color: var(--fg); border-color: rgba(0, 0, 0, 0.18); }
+  .copy-btn.copied {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+  }
   .steps + p.note code {
     font: 400 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
     padding: 1px 6px;
@@ -437,8 +461,11 @@
       <div class="install-option">
         <h3>Homebrew</h3>
         <p>Installs the signed, notarized app from GitHub Releases. Sparkle keeps mwitch updated automatically, and the cask is updated from the same release zip.</p>
-        <code class="terminal">brew tap viraatdas/mwitch https://github.com/viraatdas/mwitch
+        <div class="terminal-wrap">
+          <code class="terminal" id="brew-cmd">brew tap viraatdas/mwitch https://github.com/viraatdas/mwitch
 brew install --cask mwitch</code>
+          <button class="copy-btn" type="button" data-copy="brew-cmd" aria-label="Copy Homebrew install command">Copy</button>
+        </div>
       </div>
       <div class="install-option">
         <h3>Direct download</h3>
@@ -476,5 +503,33 @@ brew install --cask mwitch</code>
     </div>
   </footer>
 </div>
+<script>
+  document.querySelectorAll('.copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var src = document.getElementById(btn.dataset.copy);
+      if (!src) return;
+      var text = src.innerText.trim();
+      function done() {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1600);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      } else {
+        var r = document.createRange();
+        r.selectNode(src);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        sel.removeAllRanges();
+      }
+    });
+  });
+</script>
 </body>
 </html>
