@@ -8,6 +8,10 @@ mwitch is a fast macOS window switcher for Apple Silicon Macs. It makes
 `Cmd+Tab` switch between individual windows instead of app icons, so the exact
 window you want is one keystroke away.
 
+<p align="center">
+  <img src="Resources/mwitch-demo.png" alt="mwitch window switcher with one window row selected" width="560">
+</p>
+
 ## Install
 
 ### Homebrew
