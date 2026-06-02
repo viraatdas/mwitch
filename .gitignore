@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 RUDDER.md
 mwitch-site/mwitch.zip
+.gstack/

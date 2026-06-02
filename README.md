@@ -77,6 +77,4 @@ brew upgrade --cask mwitch
 
 mwitch has no telemetry, no accounts, and no network service beyond update checks. Accessibility is used to raise the window you pick. Screen Recording permission is used only because macOS requires it to read other apps' window titles.
 
-## Source
 
-Source code and releases are available at https://github.com/viraatdas/mwitch.
