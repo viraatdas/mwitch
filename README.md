@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Resources/mwitch-logo.png" alt="mwitch app icon" width="128" height="128">
+</p>
+
 # mwitch
 
 mwitch is a fast macOS window switcher for Apple Silicon Macs. It makes
