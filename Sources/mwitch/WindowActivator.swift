@@ -6,7 +6,7 @@ import ApplicationServices
 // title matching is unreliable for non-native AX apps like Chrome, whose AX
 // window titles don't match the CGWindowList names the enumerator captured.
 @_silgen_name("_AXUIElementGetWindow") @discardableResult
-private func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: inout CGWindowID) -> AXError
+func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: inout CGWindowID) -> AXError
 
 enum WindowActivator {
     /// Brings the entry's app forward and raises the specific window.
