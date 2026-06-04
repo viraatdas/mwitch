@@ -106,12 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static var currentVersionDescription: String {
         let info = Bundle.main.infoDictionary
-        let version = (info?["CFBundleShortVersionString"] as? String)
+        return (info?["CFBundleShortVersionString"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
-        guard let build = (info?["CFBundleVersion"] as? String), !build.isEmpty else {
-            return version
-        }
-        return "\(version) (build \(build))"
     }
 
     private func enableLaunchAtLoginIfFirstRun() {
