@@ -1,6 +1,6 @@
 cask "mwitch" do
-  version "0.3.1"
-  sha256 "07289127a0fdb77c85f43de20697d3c31c4eb0e2d80f71614b409cacc0d2b962"
+  version "0.3.2"
+  sha256 "9e26320509970e1bbbff7a49afebc4e5f9f547181414b17ba6c1921719b11714"
 
   url "https://github.com/viraatdas/mwitch/releases/download/v#{version}/mwitch.zip",
       verified: "github.com/viraatdas/mwitch/"
