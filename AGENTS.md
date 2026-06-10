@@ -9,7 +9,7 @@ mwitch is a native macOS menu-bar app written in Swift. It replaces the default 
 Core files:
 
 - `Sources/mwitch/AppDelegate.swift`: app startup, permissions prompts, menu bar item, Sparkle updater, launch at login.
-- `Sources/mwitch/HotkeyManager.swift`: global `Cmd+Tab`, `Cmd+Shift+Tab`, and Cmd-release handling.
+- `Sources/mwitch/HotkeyManager.swift`: global `Cmd+Tab`, `Cmd+Shift+Tab`, Cmd-release commit, and Esc cancel handling.
 - `Sources/mwitch/SwitcherController.swift`: switcher session state and commit/cancel behavior.
 - `Sources/mwitch/SwitcherPanel.swift`: AppKit panel shell.
 - `Sources/mwitch/SwitcherPanelView.swift`: table UI and row rendering.

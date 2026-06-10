@@ -4,7 +4,9 @@ import Carbon.HIToolbox
 
 /// Intercepts Cmd+Tab (and Cmd+Shift+Tab) at the session event-tap level so
 /// the system app switcher never sees the keystroke. Also watches Cmd
-/// release to commit the panel's current selection.
+/// release to commit the panel's current selection, and Esc to cancel it —
+/// cancelling through the tap (instead of the panel's local key monitor) keeps
+/// dismissal working regardless of how the app was installed or activated.
 ///
 /// Requires Accessibility permission (granted via AppDelegate prompt).
 /// `RegisterEventHotKey` can't steal Cmd+Tab — only a session tap can.
@@ -12,6 +14,9 @@ final class HotkeyManager {
     var onPress: (() -> Void)?
     var onShiftPress: (() -> Void)?
     var onModifiersReleased: (() -> Void)?
+    /// Returns `true` when the switcher was visible and is now cancelled, so
+    /// the tap knows to swallow the Escape keystroke.
+    var onCancel: (() -> Bool)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -79,6 +84,18 @@ final class HotkeyManager {
                 }
                 switcherCommitGate.arm()
                 return nil // swallow before WindowServer sees it
+            }
+
+            // Cancel via Escape through the global tap rather than the panel's
+            // local key monitor: the tap sees the keystroke regardless of which
+            // app is active or whether the panel became key window, so dismissal
+            // works the same no matter how the app was installed or launched.
+            if keyCode == Int64(kVK_Escape), onCancel?() == true {
+                // Clear the pending Cmd-release commit so the upcoming Cmd-up
+                // (Esc is usually pressed while Cmd is still held) doesn't
+                // re-activate a window after the user asked to cancel.
+                switcherCommitGate.reset()
+                return nil // swallow before the focused app sees it
             }
         }
 
