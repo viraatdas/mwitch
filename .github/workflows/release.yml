@@ -115,7 +115,12 @@ jobs:
               --latest
           fi
 
+      # Best-effort explicit deploy. The "Update release metadata on main" step
+      # below pushes to main, which the Vercel Git integration auto-deploys, so
+      # this CLI deploy is redundant. Never let an expired VERCEL_TOKEN fail the
+      # release and skip the cask/appcast update that ships brew + Sparkle.
       - name: Deploy mwitch-site to Vercel (production)
+        continue-on-error: true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
