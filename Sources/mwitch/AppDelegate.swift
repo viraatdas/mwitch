@@ -49,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MwitchLog.shared.line("hotkey: Cmd released → commit")
             self?.switcher.commitIfVisible()
         }
+        hotkey.onCancel = { [weak self] in
+            guard let self, self.switcher.isVisible else { return false }
+            MwitchLog.shared.line("hotkey: Esc → cancel")
+            self.switcher.cancel()
+            return true
+        }
         hotkey.register()
     }
 
