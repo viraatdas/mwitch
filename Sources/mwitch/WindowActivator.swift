@@ -12,7 +12,8 @@ enum WindowActivator {
     /// Brings the entry's app forward and raises the specific window.
     static func activate(_ entry: WindowEntry) {
         guard let app = NSRunningApplication(processIdentifier: entry.pid) else { return }
-        app.activate(options: [.activateIgnoringOtherApps])
+        app.unhide()
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
 
         let axApp = AXUIElementCreateApplication(entry.pid)
         var windowsValue: CFTypeRef?
@@ -58,5 +59,15 @@ enum WindowActivator {
            settable.boolValue {
             AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
+        if AXUIElementIsAttributeSettable(target, kAXFocusedAttribute as CFString, &settable) == .success,
+           settable.boolValue {
+            AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
+        if AXUIElementIsAttributeSettable(axApp, kAXFocusedWindowAttribute as CFString, &settable) == .success,
+           settable.boolValue {
+            AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, target)
+        }
+
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
     }
 }
