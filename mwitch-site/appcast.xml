@@ -3,13 +3,13 @@
     <channel>
         <title>mwitch</title>
         <item>
-            <title>0.3.4</title>
-            <pubDate>Fri, 12 Jun 2026 21:38:46 +0000</pubDate>
-            <sparkle:version>41</sparkle:version>
-            <sparkle:shortVersionString>0.3.4</sparkle:shortVersionString>
+            <title>0.3.5</title>
+            <pubDate>Mon, 15 Jun 2026 21:56:20 +0000</pubDate>
+            <sparkle:version>43</sparkle:version>
+            <sparkle:shortVersionString>0.3.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/viraatdas/mwitch/releases/download/v0.3.4/mwitch.zip" length="2246279" type="application/octet-stream" sparkle:edSignature="aRU6/oUHQSEdDYm7VWGUKjuo6fGa78H946Ea+LrhkJMV8NVKSYPksyM0ART+mxCKvRqqf4rTCq4LyAvydCFwCA=="/>
+            <enclosure url="https://github.com/viraatdas/mwitch/releases/download/v0.3.5/mwitch.zip" length="2246305" type="application/octet-stream" sparkle:edSignature="M8YKPPffYXc5ErJAcW5Td9hp/x5aPLS2BZJSOU1hqvD8ipxkVFG3oMYQOw7hp9Jezx7x+tT3gifF90VVroqzDQ=="/>
         </item>
     </channel>
 </rss>
