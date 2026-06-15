@@ -31,14 +31,9 @@ final class WindowEnumeratorTests: XCTestCase {
         XCTAssertEqual(entries.map(\.appName), ["Safari", "Notion Calendar"])
     }
 
-    func testRejectsOffscreenWindowsWithoutExactStandardAXMatch() {
-        let helperSurface = rawWindow(
-            id: 30,
-            pid: 300,
-            owner: "Electron App",
-            title: "Background Surface",
-            isOnscreen: false
-        )
+    func testRejectsOffscreenWindowsThatAXKnowsAreNotStandard() {
+        // When AX can resolve the window, trust its classification: an AXDialog
+        // is a sheet/popover, not a switchable window, so it must be dropped.
         let dialog = rawWindow(
             id: 31,
             pid: 300,
@@ -48,7 +43,7 @@ final class WindowEnumeratorTests: XCTestCase {
         )
 
         let entries = buildEntries(
-            allWindows: [helperSurface, dialog],
+            allWindows: [dialog],
             axWindows: [
                 300: [
                     31: WindowEnumerator.AXWindowInfo(
@@ -60,6 +55,48 @@ final class WindowEnumeratorTests: XCTestCase {
                 ]
             ]
         )
+
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testKeepsTitledOffscreenWindowsAXCannotMap() {
+        // kAXWindowsAttribute only returns the current Space's windows, so a real
+        // window parked on another desktop (Discord, a terminal, etc.) has no AX
+        // entry to match. It must still surface as long as it carries a real
+        // CGWindowList title and clears the layer/size guards.
+        let offSpaceDiscord = rawWindow(
+            id: 30,
+            pid: 300,
+            owner: "Discord",
+            title: "#general | EXLA - Discord",
+            isOnscreen: false
+        )
+        let offSpaceTerminal = rawWindow(
+            id: 32,
+            pid: 320,
+            owner: "Ghostty",
+            title: "Moobot Terminal",
+            isOnscreen: false
+        )
+
+        let entries = buildEntries(allWindows: [offSpaceDiscord, offSpaceTerminal])
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [30, 32])
+        XCTAssertEqual(entries.map(\.appName), ["Discord", "Ghostty"])
+    }
+
+    func testRejectsUntitledOffscreenSurfacesAXCannotMap() {
+        // Stale Electron helper surfaces show up in the all-windows pass with no
+        // CGWindowList title and no AX entry; without a title they stay hidden.
+        let helperSurface = rawWindow(
+            id: 33,
+            pid: 330,
+            owner: "Electron App",
+            title: "",
+            isOnscreen: false
+        )
+
+        let entries = buildEntries(allWindows: [helperSurface])
 
         XCTAssertTrue(entries.isEmpty)
     }

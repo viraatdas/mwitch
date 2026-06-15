@@ -95,11 +95,27 @@ enum WindowEnumerator {
 
             // The all-windows pass is what finds real windows from other Spaces,
             // hidden apps, and minimized state. It also includes stale helper
-            // surfaces; require an exact AX standard-window match before adding
-            // any non-onscreen candidate.
+            // surfaces, so non-onscreen candidates need an extra gate.
             if fromAllWindowsPass, !window.isOnscreen {
                 axInfo = axWindows(for: window.pid)[window.cgWindowID]
-                guard axInfo?.isStandardWindow == true else { return }
+                if let axInfo {
+                    // AX could resolve this window: trust its classification and
+                    // keep only real standard windows (drops dialogs, sheets,
+                    // popovers, and other non-switchable surfaces).
+                    guard axInfo.isStandardWindow else { return }
+                } else {
+                    // AX cannot map windows that live on another Space:
+                    // kAXWindowsAttribute only returns the current Space's (and
+                    // minimized) windows, so _AXUIElementGetWindow has nothing to
+                    // match. That silently dropped real windows parked on other
+                    // desktops — Discord, terminal windows, etc. Fall back to the
+                    // CGWindowList title: genuine windows publish a name, while
+                    // the stale helper surfaces the all-pass also returns do not
+                    // (and are caught by the empty-title and minimum-size guards).
+                    // Combined with the per-app title de-dupe below, a titled
+                    // candidate here is a real off-Space window worth switching to.
+                    guard !window.title.isEmpty else { return }
+                }
             }
 
             // Prefer the CGWindowList name. Some apps (Contacts, System
