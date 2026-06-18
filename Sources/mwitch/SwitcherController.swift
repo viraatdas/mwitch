@@ -24,7 +24,7 @@ final class SwitcherController {
 
     func advance(reverse: Bool = false) {
         if !isVisible {
-            let entries = WindowEnumerator.enumerate()
+            let entries = WindowRecencyTracker.shared.sorted(WindowEnumerator.enumerate())
             handle(session.start(entries: entries), presenting: true)
         } else {
             handle(session.perform(.moveSelection(delta: reverse ? -1 : 1)))
@@ -80,6 +80,7 @@ final class SwitcherController {
             hide()
             if let chosen {
                 WindowActivator.activate(chosen)
+                WindowRecencyTracker.shared.record(chosen.cgWindowID)
             }
         }
     }

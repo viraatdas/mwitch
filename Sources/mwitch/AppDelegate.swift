@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupUpdater()
         setupStatusItem()
 
+        WindowRecencyTracker.shared.start()
+
         switcher = SwitcherController()
         switcher.preWarm()
 
