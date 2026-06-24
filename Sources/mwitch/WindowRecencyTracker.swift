@@ -17,12 +17,14 @@ final class WindowRecencyTracker {
     /// Most-recently-used first.
     private var order: [CGWindowID] = []
     private let maxEntries = 256
-    private let ownPID = ProcessInfo.processInfo.processIdentifier
+    private let ownPID: pid_t
 
     /// One AX observer per app PID, tracking its focused-window changes.
     private var observers: [pid_t: AXObserver] = [:]
 
-    init() {}
+    init(ownPID: pid_t = ProcessInfo.processInfo.processIdentifier) {
+        self.ownPID = ownPID
+    }
 
     /// Begins observing app and window focus changes. Call once at launch.
     func start() {
@@ -64,8 +66,8 @@ final class WindowRecencyTracker {
     }
 
     @objc private func appActivated(_ note: Notification) {
-        guard let pid = Self.pid(from: note), pid != ownPID else { return }
-        if let id = Self.focusedWindowID(pid: pid) { record(id) }
+        guard let pid = Self.pid(from: note) else { return }
+        recordFocusedWindow(pid: pid, lookup: Self.focusedWindowID)
     }
 
     @objc private func appLaunched(_ note: Notification) {
@@ -80,16 +82,25 @@ final class WindowRecencyTracker {
 
     // MARK: - Per-app focused-window observers
 
-    /// Fired by AX whenever an app's focused window changes — including clicking
-    /// between two windows of the same app, which NSWorkspace never reports. The
-    /// element handed to the callback is the newly-focused window.
+    /// Fired by AX whenever an app's focused/main window changes, including
+    /// clicking between two windows of the same app, which NSWorkspace never
+    /// reports. Some apps send the changed window as `element`; others send the
+    /// observed app element, so fall back to querying that app's focused window.
     private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon in
         guard let refcon else { return }
         let tracker = Unmanaged<WindowRecencyTracker>.fromOpaque(refcon).takeUnretainedValue()
+
         var winID: CGWindowID = 0
         if _AXUIElementGetWindow(element, &winID) == .success {
             tracker.record(winID)
+            return
         }
+
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else {
+            return
+        }
+        tracker.recordFocusedWindow(pid: pid, lookup: WindowRecencyTracker.focusedWindowID)
     }
 
     private func observeFocusChanges(pid: pid_t) {
@@ -100,7 +111,20 @@ final class WindowRecencyTracker {
 
         let axApp = AXUIElementCreateApplication(pid)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        AXObserverAddNotification(observer, axApp, kAXFocusedWindowChangedNotification as CFString, refcon)
+        let focusedResult = AXObserverAddNotification(
+            observer,
+            axApp,
+            kAXFocusedWindowChangedNotification as CFString,
+            refcon
+        )
+        let mainResult = AXObserverAddNotification(
+            observer,
+            axApp,
+            kAXMainWindowChangedNotification as CFString,
+            refcon
+        )
+        guard focusedResult == .success || mainResult == .success else { return }
+
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         observers[pid] = observer
     }
@@ -114,6 +138,11 @@ final class WindowRecencyTracker {
 
     private static func pid(from note: Notification) -> pid_t? {
         (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+    }
+
+    func recordFocusedWindow(pid: pid_t, lookup: (pid_t) -> CGWindowID?) {
+        guard pid != ownPID, let id = lookup(pid) else { return }
+        record(id)
     }
 
     /// The CGWindowID of an app's focused window, via the same private API the

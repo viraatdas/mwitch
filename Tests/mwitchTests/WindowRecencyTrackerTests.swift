@@ -45,6 +45,33 @@ final class WindowRecencyTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [1, 2])
     }
 
+    func testRecordsFocusedWindowByPIDForAppLevelAXNotifications() {
+        let zOrder = [
+            entry(id: 1, app: "Arc", title: "Project"),
+            entry(id: 2, app: "Arc", title: "Docs"),
+            entry(id: 3, app: "Terminal", title: "Build"),
+        ]
+        let tracker = WindowRecencyTracker(ownPID: 999)
+
+        tracker.recordFocusedWindow(pid: 100) { pid in
+            pid == 100 ? 2 : nil
+        }
+
+        XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [2, 1, 3])
+    }
+
+    func testDoesNotRecordOwnFocusedWindow() {
+        let zOrder = [
+            entry(id: 2, app: "Arc", title: "Docs"),
+            entry(id: 1, app: "mwitch", title: "Panel"),
+        ]
+        let tracker = WindowRecencyTracker(ownPID: 100)
+
+        tracker.recordFocusedWindow(pid: 100) { _ in 1 }
+
+        XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [2, 1])
+    }
+
     private func entry(id: CGWindowID, app: String, title: String) -> WindowEntry {
         WindowEntry(
             cgWindowID: id,
