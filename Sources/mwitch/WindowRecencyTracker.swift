@@ -39,6 +39,8 @@ final class WindowRecencyTracker {
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             observeFocusChanges(pid: app.processIdentifier)
         }
+        seedActiveWindow(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                         lookup: Self.focusedWindowID)
     }
 
     /// Marks a window as the most recently used.
@@ -143,6 +145,11 @@ final class WindowRecencyTracker {
     func recordFocusedWindow(pid: pid_t, lookup: (pid_t) -> CGWindowID?) {
         guard pid != ownPID, let id = lookup(pid) else { return }
         record(id)
+    }
+
+    func seedActiveWindow(pid: pid_t?, lookup: (pid_t) -> CGWindowID?) {
+        guard let pid else { return }
+        recordFocusedWindow(pid: pid, lookup: lookup)
     }
 
     /// The CGWindowID of an app's focused window, via the same private API the

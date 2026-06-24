@@ -72,6 +72,33 @@ final class WindowRecencyTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [2, 1])
     }
 
+    func testSeedsActiveWindowOnStartup() {
+        let zOrder = [
+            entry(id: 1, app: "Arc", title: "Project"),
+            entry(id: 2, app: "Arc", title: "Docs"),
+            entry(id: 3, app: "Terminal", title: "Build"),
+        ]
+        let tracker = WindowRecencyTracker(ownPID: 999)
+
+        tracker.seedActiveWindow(pid: 100) { pid in
+            pid == 100 ? 2 : nil
+        }
+
+        XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [2, 1, 3])
+    }
+
+    func testDoesNotSeedWhenThereIsNoActiveWindow() {
+        let zOrder = [
+            entry(id: 1, app: "Arc", title: "Project"),
+            entry(id: 2, app: "Terminal", title: "Build"),
+        ]
+        let tracker = WindowRecencyTracker(ownPID: 999)
+
+        tracker.seedActiveWindow(pid: nil) { _ in 1 }
+
+        XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [1, 2])
+    }
+
     private func entry(id: CGWindowID, app: String, title: String) -> WindowEntry {
         WindowEntry(
             cgWindowID: id,
