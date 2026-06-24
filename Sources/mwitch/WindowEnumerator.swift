@@ -43,6 +43,26 @@ enum WindowEnumerator {
         }
     }
 
+    private struct VisualFrameKey: Hashable {
+        private static let quantum: CGFloat = 8
+
+        let x: Int
+        let y: Int
+        let width: Int
+        let height: Int
+
+        init(_ bounds: CGRect) {
+            x = Self.quantize(bounds.origin.x)
+            y = Self.quantize(bounds.origin.y)
+            width = Self.quantize(bounds.width)
+            height = Self.quantize(bounds.height)
+        }
+
+        private static func quantize(_ value: CGFloat) -> Int {
+            Int((value / quantum).rounded())
+        }
+    }
+
     private static var metaCache: [pid_t: AppMeta] = [:]
 
     /// Drops cached app metadata when an app terminates so we don't hand back
@@ -75,6 +95,7 @@ enum WindowEnumerator {
     ) -> [WindowEntry] {
         var seenWindowIDs = Set<CGWindowID>()
         var seenTitles: [pid_t: Set<String>] = [:]
+        var seenGhosttyFrames: [pid_t: Set<VisualFrameKey>] = [:]
         var results: [WindowEntry] = []
         var axCache: [pid_t: [CGWindowID: AXWindowInfo]] = [:]
 
@@ -137,6 +158,15 @@ enum WindowEnumerator {
                     axInfo = axWindows(for: window.pid)[window.cgWindowID]
                 }
                 guard axInfo != nil else { return }
+            }
+
+            // Ghostty exposes every tab as a separate layer-0 titled CG window
+            // in the all-windows pass. Tabs in the same visual window share a
+            // frame, so keep the frontmost tab for each frame and drop the rest.
+            let ghosttyFrame = window.ownerName == "Ghostty" ? VisualFrameKey(window.bounds) : nil
+            if let ghosttyFrame {
+                guard seenGhosttyFrames[window.pid]?.contains(ghosttyFrame) != true else { return }
+                seenGhosttyFrames[window.pid, default: []].insert(ghosttyFrame)
             }
 
             let meta = appMetaForPID(window.pid, window.ownerName)

@@ -85,6 +85,72 @@ final class WindowEnumeratorTests: XCTestCase {
         XCTAssertEqual(entries.map(\.appName), ["Discord", "Ghostty"])
     }
 
+    func testCollapsesGhosttyTabsWithTheSameVisualFrame() {
+        let visibleTab = rawWindow(
+            id: 70,
+            pid: 700,
+            owner: "Ghostty",
+            title: "Libra",
+            isOnscreen: true,
+            bounds: CGRect(x: 0, y: 33, width: 1728, height: 1084)
+        )
+        let inactiveTab = rawWindow(
+            id: 71,
+            pid: 700,
+            owner: "Ghostty",
+            title: "~/Documents/mwitch",
+            isOnscreen: false,
+            bounds: CGRect(x: 1, y: 33, width: 1728, height: 1084)
+        )
+        let offspaceWindow = rawWindow(
+            id: 72,
+            pid: 700,
+            owner: "Ghostty",
+            title: "~/Documents/project",
+            isOnscreen: false,
+            bounds: CGRect(x: -1920, y: 67, width: 1920, height: 1050)
+        )
+        let inactiveOffspaceTab = rawWindow(
+            id: 73,
+            pid: 700,
+            owner: "Ghostty",
+            title: "~/Documents/other",
+            isOnscreen: false,
+            bounds: CGRect(x: -1921, y: 67, width: 1920, height: 1050)
+        )
+
+        let entries = buildEntries(
+            onScreenWindows: [visibleTab],
+            allWindows: [inactiveTab, offspaceWindow, inactiveOffspaceTab, visibleTab]
+        )
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [70, 72])
+        XCTAssertEqual(entries.map(\.title), ["Libra", "~/Documents/project"])
+    }
+
+    func testSameFrameCollapseIsScopedToGhostty() {
+        let first = rawWindow(
+            id: 80,
+            pid: 800,
+            owner: "Legacy App",
+            title: "Report",
+            isOnscreen: true,
+            bounds: CGRect(x: 0, y: 33, width: 1728, height: 1084)
+        )
+        let second = rawWindow(
+            id: 81,
+            pid: 800,
+            owner: "Legacy App",
+            title: "Dashboard",
+            isOnscreen: false,
+            bounds: CGRect(x: 1, y: 33, width: 1728, height: 1084)
+        )
+
+        let entries = buildEntries(onScreenWindows: [first], allWindows: [second])
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [80, 81])
+    }
+
     func testRejectsUntitledOffscreenSurfacesAXCannotMap() {
         // Stale Electron helper surfaces show up in the all-windows pass with no
         // CGWindowList title and no AX entry; without a title they stay hidden.
