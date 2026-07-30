@@ -9,11 +9,18 @@ import ApplicationServices
 func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: inout CGWindowID) -> AXError
 
 enum WindowActivator {
+    // Bringing every window forward destroys the WindowServer's cross-app
+    // ordering by turning each application's windows into a contiguous block.
+    // Raise and focus only the requested AX window instead.
+    static let applicationActivationOptions: NSApplication.ActivationOptions = [
+        .activateIgnoringOtherApps
+    ]
+
     /// Brings the entry's app forward and raises the specific window.
     static func activate(_ entry: WindowEntry) {
         guard let app = NSRunningApplication(processIdentifier: entry.pid) else { return }
         app.unhide()
-        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        app.activate(options: applicationActivationOptions)
 
         let axApp = AXUIElementCreateApplication(entry.pid)
         var windowsValue: CFTypeRef?
@@ -68,6 +75,6 @@ enum WindowActivator {
             AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, target)
         }
 
-        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        app.activate(options: applicationActivationOptions)
     }
 }

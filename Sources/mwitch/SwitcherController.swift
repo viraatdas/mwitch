@@ -24,6 +24,7 @@ final class SwitcherController {
 
     func advance(reverse: Bool = false) {
         if !isVisible {
+            WindowRecencyTracker.shared.refreshFrontmostWindow()
             let entries = WindowRecencyTracker.shared.sorted(WindowEnumerator.enumerate())
             handle(session.start(entries: entries), presenting: true)
         } else {

@@ -10,7 +10,8 @@ import ApplicationServices
 ///   - watch NSWorkspace app-activations to catch switches between apps made
 ///     outside mwitch (native Cmd+Tab, Dock, clicking another app), and
 ///   - watch each app's AX focused-window changes so clicking between two
-///     windows of the *same* app reorders them too.
+///     windows of the *same* app reorders them too,
+///   - synchronously confirm the focused window whenever the switcher opens.
 final class WindowRecencyTracker {
     static let shared = WindowRecencyTracker()
 
@@ -39,8 +40,7 @@ final class WindowRecencyTracker {
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             observeFocusChanges(pid: app.processIdentifier)
         }
-        seedActiveWindow(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-                         lookup: Self.focusedWindowID)
+        refreshFrontmostWindow()
     }
 
     /// Marks a window as the most recently used.
@@ -147,7 +147,18 @@ final class WindowRecencyTracker {
         record(id)
     }
 
-    func seedActiveWindow(pid: pid_t?, lookup: (pid_t) -> CGWindowID?) {
+    /// Captures the window that is actually focused at the point the switcher
+    /// opens. This closes gaps from missed/delayed workspace or AX
+    /// notifications and guarantees that index zero is the current window,
+    /// making index one the previously used window.
+    func refreshFrontmostWindow() {
+        refreshFrontmostWindow(
+            pid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            lookup: Self.focusedWindowID
+        )
+    }
+
+    func refreshFrontmostWindow(pid: pid_t?, lookup: (pid_t) -> CGWindowID?) {
         guard let pid else { return }
         recordFocusedWindow(pid: pid, lookup: lookup)
     }

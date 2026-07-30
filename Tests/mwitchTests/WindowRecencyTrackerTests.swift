@@ -72,7 +72,7 @@ final class WindowRecencyTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [2, 1])
     }
 
-    func testSeedsActiveWindowOnStartup() {
+    func testRefreshesFrontmostWindow() {
         let zOrder = [
             entry(id: 1, app: "Arc", title: "Project"),
             entry(id: 2, app: "Arc", title: "Docs"),
@@ -80,23 +80,44 @@ final class WindowRecencyTrackerTests: XCTestCase {
         ]
         let tracker = WindowRecencyTracker(ownPID: 999)
 
-        tracker.seedActiveWindow(pid: 100) { pid in
+        tracker.refreshFrontmostWindow(pid: 100) { pid in
             pid == 100 ? 2 : nil
         }
 
         XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [2, 1, 3])
     }
 
-    func testDoesNotSeedWhenThereIsNoActiveWindow() {
+    func testDoesNotRefreshWhenThereIsNoActiveWindow() {
         let zOrder = [
             entry(id: 1, app: "Arc", title: "Project"),
             entry(id: 2, app: "Terminal", title: "Build"),
         ]
         let tracker = WindowRecencyTracker(ownPID: 999)
 
-        tracker.seedActiveWindow(pid: nil) { _ in 1 }
+        tracker.refreshFrontmostWindow(pid: nil) { _ in 1 }
 
         XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [1, 2])
+    }
+
+    func testRefreshBeforeOpeningCorrectsMissedFocusNotification() {
+        let zOrder = [
+            entry(id: 1, app: "Arc", title: "Project"),
+            entry(id: 2, app: "Terminal", title: "Build"),
+            entry(id: 3, app: "Arc", title: "Docs"),
+        ]
+        let tracker = WindowRecencyTracker(ownPID: 999)
+
+        tracker.record(1)
+        tracker.record(2)
+
+        // The AX notification for the latest Arc focus was missed. The
+        // synchronous refresh performed when Cmd+Tab opens repairs the head of
+        // the MRU list while retaining the previously observed window order.
+        tracker.refreshFrontmostWindow(pid: 100) { pid in
+            pid == 100 ? 3 : nil
+        }
+
+        XCTAssertEqual(tracker.sorted(zOrder).map(\.cgWindowID), [3, 2, 1])
     }
 
     private func entry(id: CGWindowID, app: String, title: String) -> WindowEntry {
