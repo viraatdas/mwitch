@@ -43,26 +43,6 @@ enum WindowEnumerator {
         }
     }
 
-    private struct VisualFrameKey: Hashable {
-        private static let quantum: CGFloat = 8
-
-        let x: Int
-        let y: Int
-        let width: Int
-        let height: Int
-
-        init(_ bounds: CGRect) {
-            x = Self.quantize(bounds.origin.x)
-            y = Self.quantize(bounds.origin.y)
-            width = Self.quantize(bounds.width)
-            height = Self.quantize(bounds.height)
-        }
-
-        private static func quantize(_ value: CGFloat) -> Int {
-            Int((value / quantum).rounded())
-        }
-    }
-
     private static var metaCache: [pid_t: AppMeta] = [:]
 
     /// Drops cached app metadata when an app terminates so we don't hand back
@@ -82,7 +62,8 @@ enum WindowEnumerator {
             allWindows: all,
             ownPID: ProcessInfo.processInfo.processIdentifier,
             axWindowsForPID: axWindows(pid:),
-            appMetaForPID: appMeta(pid:ownerName:)
+            appMetaForPID: appMeta(pid:ownerName:),
+            isAssignedToASpace: WindowSpaces.isAssignedToASpace(_:)
         )
     }
 
@@ -91,11 +72,11 @@ enum WindowEnumerator {
         allWindows: [RawWindow],
         ownPID: pid_t,
         axWindowsForPID: (pid_t) -> [CGWindowID: AXWindowInfo],
-        appMetaForPID: (pid_t, String) -> AppMeta
+        appMetaForPID: (pid_t, String) -> AppMeta,
+        isAssignedToASpace: (CGWindowID) -> Bool?
     ) -> [WindowEntry] {
         var seenWindowIDs = Set<CGWindowID>()
         var seenTitles: [pid_t: Set<String>] = [:]
-        var seenGhosttyFrames: [pid_t: Set<VisualFrameKey>] = [:]
         var results: [WindowEntry] = []
         var axCache: [pid_t: [CGWindowID: AXWindowInfo]] = [:]
 
@@ -136,6 +117,18 @@ enum WindowEnumerator {
                     // Combined with the per-app title de-dupe below, a titled
                     // candidate here is a real off-Space window worth switching to.
                     guard !window.title.isEmpty else { return }
+
+                    // ...except for native tabbed windows. Apps that use
+                    // NSWindow tabbing (Ghostty, Terminal) back every tab with
+                    // its own titled layer-0 CG window that AX cannot resolve
+                    // either, so a background tab is indistinguishable from an
+                    // off-Space window by CG and AX data alone. The window
+                    // server tells them apart: real windows are assigned to a
+                    // Space — including other Spaces and fullscreen Spaces —
+                    // while background tab surfaces belong to no Space at all.
+                    // Only drop on a definite "no Space"; an unavailable query
+                    // returns nil and keeps the window.
+                    guard isAssignedToASpace(window.cgWindowID) != false else { return }
                 }
             }
 
@@ -158,15 +151,6 @@ enum WindowEnumerator {
                     axInfo = axWindows(for: window.pid)[window.cgWindowID]
                 }
                 guard axInfo != nil else { return }
-            }
-
-            // Ghostty exposes every tab as a separate layer-0 titled CG window
-            // in the all-windows pass. Tabs in the same visual window share a
-            // frame, so keep the frontmost tab for each frame and drop the rest.
-            let ghosttyFrame = window.ownerName == "Ghostty" ? VisualFrameKey(window.bounds) : nil
-            if let ghosttyFrame {
-                guard seenGhosttyFrames[window.pid]?.contains(ghosttyFrame) != true else { return }
-                seenGhosttyFrames[window.pid, default: []].insert(ghosttyFrame)
             }
 
             let meta = appMetaForPID(window.pid, window.ownerName)

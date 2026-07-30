@@ -85,70 +85,92 @@ final class WindowEnumeratorTests: XCTestCase {
         XCTAssertEqual(entries.map(\.appName), ["Discord", "Ghostty"])
     }
 
-    func testCollapsesGhosttyTabsWithTheSameVisualFrame() {
-        let visibleTab = rawWindow(
-            id: 70,
-            pid: 700,
-            owner: "Ghostty",
-            title: "Libra",
-            isOnscreen: true,
-            bounds: CGRect(x: 0, y: 33, width: 1728, height: 1084)
+    func testKeepsEveryRealTabbedWindowEvenWhenTheyShareAFrame() {
+        // Captured from a real Ghostty session: two separate windows, both
+        // zoomed to the identical frame, each fronting one tab of its own tab
+        // group. Both are real windows the switcher must offer; the background
+        // tabs behind them are not. Only the two real windows hold a Space.
+        let frame = CGRect(x: 0, y: 33, width: 1728, height: 1084)
+        let firstWindow = rawWindow(
+            id: 78, pid: 652, owner: "Ghostty", title: "rudder", isOnscreen: true, bounds: frame
         )
-        let inactiveTab = rawWindow(
-            id: 71,
-            pid: 700,
-            owner: "Ghostty",
-            title: "~/Documents/mwitch",
-            isOnscreen: false,
-            bounds: CGRect(x: 1, y: 33, width: 1728, height: 1084)
+        let secondWindow = rawWindow(
+            id: 76, pid: 652, owner: "Ghostty", title: "🔴 Rudder: aws-v2", isOnscreen: true, bounds: frame
         )
-        let offspaceWindow = rawWindow(
-            id: 72,
-            pid: 700,
-            owner: "Ghostty",
-            title: "~/Documents/project",
-            isOnscreen: false,
-            bounds: CGRect(x: -1920, y: 67, width: 1920, height: 1050)
+        // Background tabs report a frame nudged by a pixel or sitting exactly on
+        // top of their window, which is why frame comparison cannot classify them.
+        let backgroundTabs = [
+            rawWindow(id: 79, pid: 652, owner: "Ghostty", title: "i2message", isOnscreen: false,
+                      bounds: CGRect(x: -1, y: 33, width: 1728, height: 1084)),
+            rawWindow(id: 70, pid: 652, owner: "Ghostty", title: "aws-v2", isOnscreen: false, bounds: frame),
+            rawWindow(id: 2594, pid: 652, owner: "Ghostty", title: "🟢 Rudder: mwitch", isOnscreen: false,
+                      bounds: CGRect(x: 1, y: 33, width: 1728, height: 1084))
+        ]
+
+        let entries = buildEntries(
+            onScreenWindows: [firstWindow, secondWindow],
+            allWindows: backgroundTabs + [firstWindow, secondWindow],
+            spacelessWindows: [79, 70, 2594]
         )
-        let inactiveOffspaceTab = rawWindow(
-            id: 73,
-            pid: 700,
-            owner: "Ghostty",
-            title: "~/Documents/other",
-            isOnscreen: false,
-            bounds: CGRect(x: -1921, y: 67, width: 1920, height: 1050)
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [78, 76])
+        XCTAssertEqual(entries.map(\.title), ["rudder", "🔴 Rudder: aws-v2"])
+    }
+
+    func testKeepsOffSpaceWindowThatSharesAFrameWithACurrentSpaceWindow() {
+        // A window parked on another Space is AX-unresolvable exactly like a
+        // background tab, and users routinely size windows identically, so the
+        // shared frame must not hide it. It holds a Space, so it stays.
+        let frame = CGRect(x: 0, y: 33, width: 1728, height: 1084)
+        let onCurrentSpace = rawWindow(
+            id: 78, pid: 652, owner: "Ghostty", title: "rudder", isOnscreen: true, bounds: frame
+        )
+        let onAnotherSpace = rawWindow(
+            id: 90, pid: 652, owner: "Ghostty", title: "~/code/sleeve", isOnscreen: false, bounds: frame
         )
 
         let entries = buildEntries(
-            onScreenWindows: [visibleTab],
-            allWindows: [inactiveTab, offspaceWindow, inactiveOffspaceTab, visibleTab]
+            onScreenWindows: [onCurrentSpace],
+            allWindows: [onAnotherSpace, onCurrentSpace]
         )
 
-        XCTAssertEqual(entries.map(\.cgWindowID), [70, 72])
-        XCTAssertEqual(entries.map(\.title), ["Libra", "~/Documents/project"])
+        XCTAssertEqual(entries.map(\.cgWindowID), [78, 90])
     }
 
-    func testSameFrameCollapseIsScopedToGhostty() {
-        let first = rawWindow(
-            id: 80,
-            pid: 800,
-            owner: "Legacy App",
-            title: "Report",
-            isOnscreen: true,
-            bounds: CGRect(x: 0, y: 33, width: 1728, height: 1084)
-        )
-        let second = rawWindow(
-            id: 81,
-            pid: 800,
-            owner: "Legacy App",
-            title: "Dashboard",
-            isOnscreen: false,
-            bounds: CGRect(x: 1, y: 33, width: 1728, height: 1084)
+    func testKeepsWindowWhenSpaceMembershipIsUnknown() {
+        // A failed Space query must not hide a real window.
+        let offscreen = rawWindow(
+            id: 91, pid: 652, owner: "Ghostty", title: "~/code/sleeve", isOnscreen: false
         )
 
-        let entries = buildEntries(onScreenWindows: [first], allWindows: [second])
+        let entries = buildEntries(allWindows: [offscreen], unknownSpaceWindows: [91])
 
-        XCTAssertEqual(entries.map(\.cgWindowID), [80, 81])
+        XCTAssertEqual(entries.map(\.cgWindowID), [91])
+    }
+
+    func testSpacelessSurfaceIsStillKeptWhenAXResolvesItAsAStandardWindow() {
+        // AX resolving a window means it is real (minimized windows land here),
+        // so the Space check never gets to second-guess it.
+        let minimized = rawWindow(
+            id: 92, pid: 920, owner: "Preview", title: "Scan.pdf", isOnscreen: false
+        )
+
+        let entries = buildEntries(
+            allWindows: [minimized],
+            axWindows: [
+                920: [
+                    92: WindowEnumerator.AXWindowInfo(
+                        title: "Scan.pdf",
+                        role: "AXWindow",
+                        subrole: "AXStandardWindow",
+                        isMinimized: true
+                    )
+                ]
+            ],
+            spacelessWindows: [92]
+        )
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [92])
     }
 
     func testRejectsUntitledOffscreenSurfacesAXCannotMap() {
@@ -223,10 +245,14 @@ final class WindowEnumeratorTests: XCTestCase {
         XCTAssertEqual(entries.map(\.cgWindowID), [60])
     }
 
+    /// Windows are assigned to a Space unless listed in `spacelessWindows`
+    /// (background tab surfaces) or `unknownSpaceWindows` (query failed).
     private func buildEntries(
         onScreenWindows: [WindowEnumerator.RawWindow] = [],
         allWindows: [WindowEnumerator.RawWindow] = [],
-        axWindows: [pid_t: [CGWindowID: WindowEnumerator.AXWindowInfo]] = [:]
+        axWindows: [pid_t: [CGWindowID: WindowEnumerator.AXWindowInfo]] = [:],
+        spacelessWindows: Set<CGWindowID> = [],
+        unknownSpaceWindows: Set<CGWindowID> = []
     ) -> [WindowEntry] {
         WindowEnumerator.entries(
             onScreenWindows: onScreenWindows,
@@ -239,6 +265,10 @@ final class WindowEnumeratorTests: XCTestCase {
                     icon: nil,
                     bundleID: "test.\(pid)"
                 )
+            },
+            isAssignedToASpace: { windowID in
+                if unknownSpaceWindows.contains(windowID) { return nil }
+                return !spacelessWindows.contains(windowID)
             }
         )
     }

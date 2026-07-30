@@ -16,7 +16,19 @@ Core files:
 - `Sources/mwitch/SwitcherListState.swift`: filtered rows and absolute window selection mapping.
 - `Sources/mwitch/SwitcherSearch.swift`: search ranking.
 - `Sources/mwitch/WindowEnumerator.swift`: CoreGraphics window listing.
+- `Sources/mwitch/WindowSpaces.swift`: Space membership lookup, used to tell real windows from native tab surfaces.
 - `Sources/mwitch/WindowActivator.swift`: Accessibility window activation.
+
+## Window Enumeration Notes
+
+Apps that use native macOS window tabbing (Ghostty, Terminal) back every tab with
+its own layer-0, titled CG window that Accessibility cannot resolve — exactly how
+a real window parked on another Space looks. Frames do not separate them either:
+background tabs sit on their window's frame give or take a pixel, and two real
+windows are often sized identically. The window server is the only reliable
+source: it assigns every real window to a Space, including other Spaces and
+fullscreen Spaces, while background tab surfaces belong to no Space at all. That
+is what `WindowSpaces` queries.
 
 ## Local Commands
 
