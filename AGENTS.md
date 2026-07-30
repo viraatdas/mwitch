@@ -25,10 +25,11 @@ Apps that use native macOS window tabbing (Ghostty, Terminal) back every tab wit
 its own layer-0, titled CG window that Accessibility cannot resolve — exactly how
 a real window parked on another Space looks. Frames do not separate them either:
 background tabs sit on their window's frame give or take a pixel, and two real
-windows are often sized identically. The window server is the only reliable
-source: it assigns every real window to a Space, including other Spaces and
-fullscreen Spaces, while background tab surfaces belong to no Space at all. That
-is what `WindowSpaces` queries.
+windows are often sized identically. `WindowSpaces` queries WindowServer Space
+membership as the structural discriminator: nonempty membership proves a real
+window, while empty membership rejects inactive tabs only after minimized and
+hidden-app windows are exempted. The private symbols are resolved dynamically;
+an unavailable or failed query returns `nil` and fails open.
 
 ## Local Commands
 

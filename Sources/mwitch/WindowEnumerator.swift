@@ -63,7 +63,8 @@ enum WindowEnumerator {
             ownPID: ProcessInfo.processInfo.processIdentifier,
             axWindowsForPID: axWindows(pid:),
             appMetaForPID: appMeta(pid:ownerName:),
-            isAssignedToASpace: WindowSpaces.isAssignedToASpace(_:)
+            isAssignedToASpace: WindowSpaces.isAssignedToASpace(_:),
+            isAppHidden: { NSRunningApplication(processIdentifier: $0)?.isHidden == true }
         )
     }
 
@@ -73,7 +74,8 @@ enum WindowEnumerator {
         ownPID: pid_t,
         axWindowsForPID: (pid_t) -> [CGWindowID: AXWindowInfo],
         appMetaForPID: (pid_t, String) -> AppMeta,
-        isAssignedToASpace: (CGWindowID) -> Bool?
+        isAssignedToASpace: (CGWindowID) -> Bool?,
+        isAppHidden: (pid_t) -> Bool
     ) -> [WindowEntry] {
         var seenWindowIDs = Set<CGWindowID>()
         var seenTitles: [pid_t: Set<String>] = [:]
@@ -94,6 +96,7 @@ enum WindowEnumerator {
             guard window.bounds.height >= 40, window.bounds.width >= 80 else { return }
 
             var axInfo: AXWindowInfo?
+            var spaceMembership: Bool?
 
             // The all-windows pass is what finds real windows from other Spaces,
             // hidden apps, and minimized state. It also includes stale helper
@@ -117,18 +120,21 @@ enum WindowEnumerator {
                     // Combined with the per-app title de-dupe below, a titled
                     // candidate here is a real off-Space window worth switching to.
                     guard !window.title.isEmpty else { return }
+                }
 
-                    // ...except for native tabbed windows. Apps that use
-                    // NSWindow tabbing (Ghostty, Terminal) back every tab with
-                    // its own titled layer-0 CG window that AX cannot resolve
-                    // either, so a background tab is indistinguishable from an
-                    // off-Space window by CG and AX data alone. The window
-                    // server tells them apart: real windows are assigned to a
-                    // Space — including other Spaces and fullscreen Spaces —
-                    // while background tab surfaces belong to no Space at all.
-                    // Only drop on a definite "no Space"; an unavailable query
-                    // returns nil and keeps the window.
-                    guard isAssignedToASpace(window.cgWindowID) != false else { return }
+                // Native AppKit tabs (Ghostty, Terminal, and others) leave
+                // titled layer-0 CG surfaces behind for every inactive tab.
+                // Those surfaces have no WindowServer Space. Empty Space
+                // membership is broader than tabs, though: minimized windows
+                // and windows from hidden apps can also be Space-less, so keep
+                // those explicit states. A missing/failed private API query is
+                // nil and deliberately fails open.
+                spaceMembership = isAssignedToASpace(window.cgWindowID)
+                let isDefinitelyNotMinimized = axInfo == nil || axInfo?.isMinimized == false
+                if spaceMembership == false,
+                   isDefinitelyNotMinimized,
+                   !isAppHidden(window.pid) {
+                    return
                 }
             }
 
@@ -145,12 +151,13 @@ enum WindowEnumerator {
             // If a candidate cannot be tied to an AX window, avoid showing the
             // common duplicate title surfaces that some apps publish. Exact AX
             // matches are de-duplicated by CGWindowID so two real windows with
-            // the same title can both appear.
+            // the same title can both appear. A nonempty Space membership is
+            // equally strong proof for AX-unmapped windows on other Spaces.
             if seenTitles[window.pid]?.contains(title) == true {
                 if axInfo == nil {
                     axInfo = axWindows(for: window.pid)[window.cgWindowID]
                 }
-                guard axInfo != nil else { return }
+                guard axInfo != nil || spaceMembership == true else { return }
             }
 
             let meta = appMetaForPID(window.pid, window.ownerName)

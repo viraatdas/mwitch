@@ -148,9 +148,7 @@ final class WindowEnumeratorTests: XCTestCase {
         XCTAssertEqual(entries.map(\.cgWindowID), [91])
     }
 
-    func testSpacelessSurfaceIsStillKeptWhenAXResolvesItAsAStandardWindow() {
-        // AX resolving a window means it is real (minimized windows land here),
-        // so the Space check never gets to second-guess it.
+    func testKeepsSpacelessMinimizedStandardWindow() {
         let minimized = rawWindow(
             id: 92, pid: 920, owner: "Preview", title: "Scan.pdf", isOnscreen: false
         )
@@ -171,6 +169,91 @@ final class WindowEnumeratorTests: XCTestCase {
         )
 
         XCTAssertEqual(entries.map(\.cgWindowID), [92])
+    }
+
+    func testRejectsSpacelessNonMinimizedAXStandardWindow() {
+        // Some native inactive tabs briefly remain AX-resolvable. AX standard
+        // classification alone does not make a Space-less surface switchable.
+        let inactiveTab = rawWindow(
+            id: 93, pid: 930, owner: "Terminal", title: "Old Tab", isOnscreen: false
+        )
+
+        let entries = buildEntries(
+            allWindows: [inactiveTab],
+            axWindows: [
+                930: [
+                    93: WindowEnumerator.AXWindowInfo(
+                        title: "Old Tab",
+                        role: "AXWindow",
+                        subrole: "AXStandardWindow",
+                        isMinimized: false
+                    )
+                ]
+            ],
+            spacelessWindows: [93]
+        )
+
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testKeepsSpacelessWindowFromHiddenApp() {
+        let hiddenWindow = rawWindow(
+            id: 94, pid: 940, owner: "Notes", title: "Private note", isOnscreen: false
+        )
+
+        let entries = buildEntries(
+            allWindows: [hiddenWindow],
+            axWindows: [
+                940: [
+                    94: WindowEnumerator.AXWindowInfo(
+                        title: "Private note",
+                        role: "AXWindow",
+                        subrole: "AXStandardWindow",
+                        isMinimized: false
+                    )
+                ]
+            ],
+            spacelessWindows: [94],
+            hiddenPIDs: [940]
+        )
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [94])
+    }
+
+    func testKeepsSpacelessAXWindowWhenMinimizedStateIsUnknown() {
+        let uncertainWindow = rawWindow(
+            id: 97, pid: 970, owner: "Legacy App", title: "Document", isOnscreen: false
+        )
+
+        let entries = buildEntries(
+            allWindows: [uncertainWindow],
+            axWindows: [
+                970: [
+                    97: WindowEnumerator.AXWindowInfo(
+                        title: "Document",
+                        role: "AXWindow",
+                        subrole: "AXStandardWindow",
+                        isMinimized: nil
+                    )
+                ]
+            ],
+            spacelessWindows: [97]
+        )
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [97])
+    }
+
+    func testKeepsSameTitleSpaceAssignedOffSpaceWindows() {
+        let first = rawWindow(
+            id: 95, pid: 950, owner: "Editor", title: "README.md", isOnscreen: false
+        )
+        let second = rawWindow(
+            id: 96, pid: 950, owner: "Editor", title: "README.md", isOnscreen: false
+        )
+
+        let entries = buildEntries(allWindows: [first, second])
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [95, 96])
     }
 
     func testRejectsUntitledOffscreenSurfacesAXCannotMap() {
@@ -252,7 +335,8 @@ final class WindowEnumeratorTests: XCTestCase {
         allWindows: [WindowEnumerator.RawWindow] = [],
         axWindows: [pid_t: [CGWindowID: WindowEnumerator.AXWindowInfo]] = [:],
         spacelessWindows: Set<CGWindowID> = [],
-        unknownSpaceWindows: Set<CGWindowID> = []
+        unknownSpaceWindows: Set<CGWindowID> = [],
+        hiddenPIDs: Set<pid_t> = []
     ) -> [WindowEntry] {
         WindowEnumerator.entries(
             onScreenWindows: onScreenWindows,
@@ -269,7 +353,8 @@ final class WindowEnumeratorTests: XCTestCase {
             isAssignedToASpace: { windowID in
                 if unknownSpaceWindows.contains(windowID) { return nil }
                 return !spacelessWindows.contains(windowID)
-            }
+            },
+            isAppHidden: { hiddenPIDs.contains($0) }
         )
     }
 
