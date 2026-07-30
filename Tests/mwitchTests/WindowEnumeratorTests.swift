@@ -319,6 +319,35 @@ final class WindowEnumeratorTests: XCTestCase {
         XCTAssertEqual(entries.map(\.cgWindowID), [50, 51])
     }
 
+    /// A Space-less offscreen window whose app's AX query fails outright must
+    /// be kept: its minimized state is unknown, and the fail-open contract says
+    /// never to hide a possibly-real window on bad data.
+    func testKeepsSpacelessWindowWhenAppAXQueryFails() {
+        let window = rawWindow(id: 70, pid: 700, owner: "Hung App", title: "Notes", isOnscreen: false)
+
+        let entries = buildEntries(
+            allWindows: [window],
+            spacelessWindows: [70],
+            axBrokenPIDs: [700]
+        )
+
+        XCTAssertEqual(entries.map(\.cgWindowID), [70])
+    }
+
+    /// The same Space-less window is still rejected when the app's AX query
+    /// succeeds and simply doesn't map it — that is the tab-surface signature.
+    func testRejectsSpacelessWindowWhenAppAXQuerySucceedsWithoutIt() {
+        let window = rawWindow(id: 71, pid: 700, owner: "Tabbed App", title: "Notes", isOnscreen: false)
+
+        let entries = buildEntries(
+            allWindows: [window],
+            axWindows: [700: [:]],
+            spacelessWindows: [71]
+        )
+
+        XCTAssertTrue(entries.isEmpty)
+    }
+
     func testDeduplicatesUntetheredDuplicateTitleSurfaces() {
         let first = rawWindow(id: 60, pid: 600, owner: "Legacy App", title: "Report", isOnscreen: true)
         let duplicate = rawWindow(id: 61, pid: 600, owner: "Legacy App", title: "Report", isOnscreen: true)
@@ -330,19 +359,22 @@ final class WindowEnumeratorTests: XCTestCase {
 
     /// Windows are assigned to a Space unless listed in `spacelessWindows`
     /// (background tab surfaces) or `unknownSpaceWindows` (query failed).
+    /// PIDs in `axBrokenPIDs` simulate an app whose AX window query fails
+    /// outright (hung app, no accessibility bridge).
     private func buildEntries(
         onScreenWindows: [WindowEnumerator.RawWindow] = [],
         allWindows: [WindowEnumerator.RawWindow] = [],
         axWindows: [pid_t: [CGWindowID: WindowEnumerator.AXWindowInfo]] = [:],
         spacelessWindows: Set<CGWindowID> = [],
         unknownSpaceWindows: Set<CGWindowID> = [],
-        hiddenPIDs: Set<pid_t> = []
+        hiddenPIDs: Set<pid_t> = [],
+        axBrokenPIDs: Set<pid_t> = []
     ) -> [WindowEntry] {
         WindowEnumerator.entries(
             onScreenWindows: onScreenWindows,
             allWindows: allWindows,
             ownPID: 9999,
-            axWindowsForPID: { axWindows[$0] ?? [:] },
+            axWindowsForPID: { axBrokenPIDs.contains($0) ? nil : (axWindows[$0] ?? [:]) },
             appMetaForPID: { pid, ownerName in
                 WindowEnumerator.AppMeta(
                     name: ownerName.isEmpty ? "App \(pid)" : ownerName,

@@ -72,7 +72,7 @@ enum WindowEnumerator {
         onScreenWindows: [RawWindow],
         allWindows: [RawWindow],
         ownPID: pid_t,
-        axWindowsForPID: (pid_t) -> [CGWindowID: AXWindowInfo],
+        axWindowsForPID: (pid_t) -> [CGWindowID: AXWindowInfo]?,
         appMetaForPID: (pid_t, String) -> AppMeta,
         isAssignedToASpace: (CGWindowID) -> Bool?,
         isAppHidden: (pid_t) -> Bool
@@ -80,9 +80,12 @@ enum WindowEnumerator {
         var seenWindowIDs = Set<CGWindowID>()
         var seenTitles: [pid_t: Set<String>] = [:]
         var results: [WindowEntry] = []
-        var axCache: [pid_t: [CGWindowID: AXWindowInfo]] = [:]
+        var axCache: [pid_t: [CGWindowID: AXWindowInfo]?] = [:]
 
-        func axWindows(for pid: pid_t) -> [CGWindowID: AXWindowInfo] {
+        // nil means the app's AX window query itself failed (hung app, no
+        // accessibility bridge) — distinct from a window merely absent from a
+        // successful query.
+        func axWindows(for pid: pid_t) -> [CGWindowID: AXWindowInfo]? {
             if let cached = axCache[pid] { return cached }
             let value = axWindowsForPID(pid)
             axCache[pid] = value
@@ -101,8 +104,10 @@ enum WindowEnumerator {
             // The all-windows pass is what finds real windows from other Spaces,
             // hidden apps, and minimized state. It also includes stale helper
             // surfaces, so non-onscreen candidates need an extra gate.
+            var appAXWindows: [CGWindowID: AXWindowInfo]?
             if fromAllWindowsPass, !window.isOnscreen {
-                axInfo = axWindows(for: window.pid)[window.cgWindowID]
+                appAXWindows = axWindows(for: window.pid)
+                axInfo = appAXWindows?[window.cgWindowID]
                 if let axInfo {
                     // AX could resolve this window: trust its classification and
                     // keep only real standard windows (drops dialogs, sheets,
@@ -130,7 +135,13 @@ enum WindowEnumerator {
                 // those explicit states. A missing/failed private API query is
                 // nil and deliberately fails open.
                 spaceMembership = isAssignedToASpace(window.cgWindowID)
-                let isDefinitelyNotMinimized = axInfo == nil || axInfo?.isMinimized == false
+                // Minimized windows do appear in kAXWindowsAttribute, so when
+                // the app's AX query succeeded, a window absent from it is a
+                // surface rather than a minimized window. When the query itself
+                // failed, minimized state is unknown — fail open and keep the
+                // window rather than guess.
+                let isDefinitelyNotMinimized =
+                    (appAXWindows != nil && axInfo == nil) || axInfo?.isMinimized == false
                 if spaceMembership == false,
                    isDefinitelyNotMinimized,
                    !isAppHidden(window.pid) {
@@ -143,7 +154,7 @@ enum WindowEnumerator {
             // granted, so fall back to the Accessibility title before dropping
             // the window. Only windows with no title from any source are skipped.
             if window.title.isEmpty, axInfo == nil {
-                axInfo = axWindows(for: window.pid)[window.cgWindowID]
+                axInfo = axWindows(for: window.pid)?[window.cgWindowID]
             }
             let title = window.title.isEmpty ? (axInfo?.title ?? "") : window.title
             guard !title.isEmpty else { return }
@@ -155,7 +166,7 @@ enum WindowEnumerator {
             // equally strong proof for AX-unmapped windows on other Spaces.
             if seenTitles[window.pid]?.contains(title) == true {
                 if axInfo == nil {
-                    axInfo = axWindows(for: window.pid)[window.cgWindowID]
+                    axInfo = axWindows(for: window.pid)?[window.cgWindowID]
                 }
                 guard axInfo != nil || spaceMembership == true else { return }
             }
@@ -204,12 +215,14 @@ enum WindowEnumerator {
     /// Accessibility metadata for an app's windows, keyed by CGWindowID. Matches
     /// each AX window via the same private API the activator uses, so titles and
     /// switchability checks line up with the exact CG window we enumerated.
-    private static func axWindows(pid: pid_t) -> [CGWindowID: AXWindowInfo] {
+    /// Returns nil when the query itself fails, so callers can tell "app has no
+    /// resolvable windows" apart from "AX is unavailable for this app".
+    private static func axWindows(pid: pid_t) -> [CGWindowID: AXWindowInfo]? {
         let axApp = AXUIElementCreateApplication(pid)
         var windowsValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsValue) == .success,
               let windows = windowsValue as? [AXUIElement] else {
-            return [:]
+            return nil
         }
 
         var result: [CGWindowID: AXWindowInfo] = [:]

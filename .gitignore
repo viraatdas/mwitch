@@ -12,3 +12,6 @@ __pycache__/
 RUDDER.md
 mwitch-site/mwitch.zip
 .gstack/
+.rudder/
+.rudder-worktrees/
+RUDDER_SHARED.md

@@ -167,6 +167,11 @@ final class WindowRecencyTracker {
     /// enumerator and activator use to bridge AX windows to CGWindowIDs.
     private static func focusedWindowID(pid: pid_t) -> CGWindowID? {
         let axApp = AXUIElementCreateApplication(pid)
+        // This runs synchronously on the hotkey path against the frontmost app.
+        // The default AX messaging timeout is ~6s, so a hung frontmost app —
+        // exactly what the user is trying to escape — would freeze the switcher
+        // for that long. Cap the wait; on timeout the cached recency stands.
+        AXUIElementSetMessagingTimeout(axApp, 0.25)
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focused) == .success,
               let focusedRef = focused,

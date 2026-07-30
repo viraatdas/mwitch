@@ -6,6 +6,7 @@ import Cocoa
 final class SwitcherController {
     private var panel: SwitcherPanel?
     private var session = SwitcherSession()
+    private var lastCommitUptime: TimeInterval = -.infinity
 
     var entries: [WindowEntry] { session.entries }
     var selection: Int { session.selection }
@@ -24,7 +25,15 @@ final class SwitcherController {
 
     func advance(reverse: Bool = false) {
         if !isVisible {
-            WindowRecencyTracker.shared.refreshFrontmostWindow()
+            // Right after a commit, activation is still asynchronous and the
+            // workspace can report the window we just left as frontmost;
+            // recording that would put it back at the MRU head and turn the
+            // quick Cmd+Tab toggle into a no-op. The commit already recorded
+            // the chosen window, so the cached order is correct — skip the
+            // sync refresh until activation has had time to land.
+            if ProcessInfo.processInfo.systemUptime - lastCommitUptime > 1.0 {
+                WindowRecencyTracker.shared.refreshFrontmostWindow()
+            }
             let entries = WindowRecencyTracker.shared.sorted(WindowEnumerator.enumerate())
             handle(session.start(entries: entries), presenting: true)
         } else {
@@ -82,6 +91,7 @@ final class SwitcherController {
             if let chosen {
                 WindowActivator.activate(chosen)
                 WindowRecencyTracker.shared.record(chosen.cgWindowID)
+                lastCommitUptime = ProcessInfo.processInfo.systemUptime
             }
         }
     }
